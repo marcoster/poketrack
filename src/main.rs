@@ -13,10 +13,10 @@ use tracing_subscriber::prelude::*;
 struct Cli {
     #[arg(short, long, default_value = "poketrack.sqlite")]
     db: PathBuf,
-    
+
     #[arg(short, long)]
     update_tcgdex: bool,
-    
+
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -24,25 +24,18 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     Add {
-        card_id: String,
-        #[arg(short, long, default_value = "EN")]
-        language: String,
+        dex_id: i32,
     },
     Remove {
-        card_id: String,
+        dex_id: i32,
     },
     List {
         #[arg(short, long)]
         set: Option<String>,
         #[arg(short, long)]
         dex: Option<i32>,
-        #[arg(short, long, default_value = "EN")]
-        language: String,
     },
-    Missing {
-        #[arg(short, long, default_value = "EN")]
-        language: String,
-    },
+    Missing,
     Stats,
 }
 
@@ -69,16 +62,15 @@ async fn main() -> Result<()> {
 
     if let Some(command) = cli.command {
         match command {
-            Commands::Add { card_id, language } => {
-                let lang = parse_language(&language)?;
-                repo.mark_card_collected(&card_id, lang).await?;
-                println!("Added card {} to collection", card_id);
+            Commands::Add { dex_id } => {
+                repo.mark_pokemon_collected(dex_id).await?;
+                println!("Added Pokemon #{} to collection", dex_id);
             }
-            Commands::Remove { card_id } => {
-                repo.unmark_card_collected(&card_id).await?;
-                println!("Removed card {} from collection", card_id);
+            Commands::Remove { dex_id } => {
+                repo.unmark_pokemon_collected(dex_id).await?;
+                println!("Removed Pokemon #{} from collection", dex_id);
             }
-            Commands::List { set, dex, language: _ } => {
+            Commands::List { set, dex } => {
                 if let Some(set_id) = set {
                     let cards = repo.get_cards_by_set(&set_id).await?;
                     for card in cards {
@@ -91,72 +83,36 @@ async fn main() -> Result<()> {
                     }
                 }
             }
-            Commands::Missing { language } => {
-                let missing = repo.get_missing_pokemon_by_dex(Some(&language)).await?;
+            Commands::Missing => {
+                let missing = repo.get_missing_pokemon().await?;
                 if missing.is_empty() {
                     println!("No missing Pokemon! You have them all!");
                 } else {
-                    println!("Missing Pokemon by National Dex:");
-                    for (dex_id, count) in missing.iter().take(20) {
-                        println!("  #{:04}: {} cards missing", dex_id, count);
+                    println!("Missing Pokemon ({} total):", missing.len());
+                    for dex_id in missing.iter().take(50) {
+                        println!("  #{}", dex_id);
                     }
-                    if missing.len() > 20 {
-                        println!("  ... and {} more", missing.len() - 20);
+                    if missing.len() > 50 {
+                        println!("  ... and {} more", missing.len() - 50);
                     }
                 }
             }
             Commands::Stats => {
-                let stats = repo.get_set_completion_stats(None).await?;
-                let mut collected_total = 0i64;
-                let mut total_cards = 0i32;
-                println!("Set Completion Stats:");
-                for stat in stats.iter().take(20) {
-                    let pct = if stat.total_cards > 0 {
-                        (stat.collected_cards as f64 / stat.total_cards as f64 * 100.0).round()
-                    } else {
-                        0.0
-                    };
-                    println!("  {}: {}/{} ({:.0}%)", stat.set_name, stat.collected_cards, stat.total_cards, pct);
-                    collected_total += stat.collected_cards;
-                    total_cards += stat.total_cards;
-                }
-                if stats.len() > 20 {
-                    println!("  ... and {} more sets", stats.len() - 20);
-                }
-                let overall_pct = if total_cards > 0 {
-                    (collected_total as f64 / total_cards as f64 * 100.0).round()
+                let completion = repo.get_pokedex_completion().await?;
+                let pct = if completion.total > 0 {
+                    (completion.collected as f64 / completion.total as f64 * 100.0).round()
                 } else {
                     0.0
                 };
-                println!("\nOverall: {}/{} ({:.0}%)", collected_total, total_cards, overall_pct);
+                println!(
+                    "Pokedex: {}/{} Pokemon collected ({:.0}%)",
+                    completion.collected, completion.total, pct
+                );
             }
         }
     }
 
     Ok(())
-}
-
-fn parse_language(lang: &str) -> Result<Language> {
-    match lang.to_uppercase().as_str() {
-        "EN" => Ok(Language::EN),
-        "FR" => Ok(Language::FR),
-        "DE" => Ok(Language::DE),
-        "ES" => Ok(Language::ES),
-        "ES_MX" => Ok(Language::ES_MX),
-        "IT" => Ok(Language::IT),
-        "PT_BR" => Ok(Language::PT_BR),
-        "PT_PT" => Ok(Language::PT_PT),
-        "NL" => Ok(Language::NL),
-        "PL" => Ok(Language::PL),
-        "RU" => Ok(Language::RU),
-        "JA" => Ok(Language::JA),
-        "KO" => Ok(Language::KO),
-        "ZH_TW" => Ok(Language::ZH_TW),
-        "ZH_CN" => Ok(Language::ZH_CN),
-        "ID" => Ok(Language::ID),
-        "TH" => Ok(Language::TH),
-        _ => anyhow::bail!("Unsupported language: {}", lang),
-    }
 }
 
 async fn update_tcgdex_cache(repo: &Repository) -> Result<()> {

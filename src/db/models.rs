@@ -39,21 +39,18 @@ pub struct Card {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct CollectedCard {
-    pub card_id: String,
-    pub language: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct PokemonIndex {
     pub card_id: String,
     pub dex_id: i32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct CollectedPokemon {
+    pub dex_id: i32,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CardWithPokemon {
-    pub card: Card,
-    pub dex_ids: Vec<i32>,
-    pub is_collected: bool,
-    pub language: Option<String>,
+pub struct PokedexCompletion {
+    pub collected: i64,
+    pub total: i64,
 }

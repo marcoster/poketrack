@@ -30,11 +30,11 @@ pub async fn initialize_database(pool: &SqlitePool) -> Result<()> {
         .execute(pool)
         .await?;
     
-    sqlx::query(schema::CREATE_COLLECTED_CARDS_TABLE)
+    sqlx::query(schema::CREATE_POKEMON_INDEX_TABLE)
         .execute(pool)
         .await?;
     
-    sqlx::query(schema::CREATE_POKEMON_INDEX_TABLE)
+    sqlx::query(schema::CREATE_COLLECTED_POKEMON_TABLE)
         .execute(pool)
         .await?;
 

@@ -46,21 +46,19 @@ CREATE TABLE IF NOT EXISTS cards (
 )
 "#;
 
-pub const CREATE_COLLECTED_CARDS_TABLE: &str = r#"
-CREATE TABLE IF NOT EXISTS collected_cards (
-    card_id TEXT PRIMARY KEY,
-    language TEXT NOT NULL DEFAULT 'EN',
-    collected_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (card_id) REFERENCES cards(id)
-)
-"#;
-
 pub const CREATE_POKEMON_INDEX_TABLE: &str = r#"
 CREATE TABLE IF NOT EXISTS pokemon_index (
     card_id TEXT NOT NULL,
     dex_id INTEGER NOT NULL,
     PRIMARY KEY (card_id, dex_id),
     FOREIGN KEY (card_id) REFERENCES cards(id)
+)
+"#;
+
+pub const CREATE_COLLECTED_POKEMON_TABLE: &str = r#"
+CREATE TABLE IF NOT EXISTS collected_pokemon (
+    dex_id INTEGER PRIMARY KEY,
+    collected_at TEXT DEFAULT CURRENT_TIMESTAMP
 )
 "#;
 
@@ -81,9 +79,5 @@ pub const CREATE_INDEXES: &[(&str, &str)] = &[
     (
         "idx_sets_serie_id",
         "CREATE INDEX IF NOT EXISTS idx_sets_serie_id ON sets(serie_id)",
-    ),
-    (
-        "idx_collected_cards_language",
-        "CREATE INDEX IF NOT EXISTS idx_collected_cards_language ON collected_cards(language)",
     ),
 ];
