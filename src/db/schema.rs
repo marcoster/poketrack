@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS cards (
     category TEXT NOT NULL,
     hp INTEGER,
     types TEXT,
+    dex_id INTEGER,
     rarity TEXT NOT NULL,
     image TEXT,
     stage TEXT,

@@ -1,10 +1,10 @@
+mod api;
 mod db;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use db::{create_pool, initialize_database, repository::Repository};
 use std::path::PathBuf;
-use tcgdex_sdk::{Language, TCGdex};
 use tracing_subscriber::prelude::*;
 
 #[derive(Parser)]
@@ -120,15 +120,12 @@ async fn update_tcgdex_cache(repo: &Repository) -> Result<()> {
 
     repo.clear_cache().await?;
 
-    let tcgdex_en = TCGdex::new(Language::EN);
-
-    let series_list = tcgdex_en.serie.list(None).await?;
+    let series_list = api::Serie::list("en").await?;
     let total_series = series_list.len();
     tracing::info!("Found {} series", total_series);
 
     let mut cards_inserted: u64 = 0;
     let mut cards_skipped: u64 = 0;
-    let mut errors: u64 = 0;
 
     for (series_idx, series_resume) in series_list.iter().enumerate() {
         tracing::info!(
@@ -138,18 +135,16 @@ async fn update_tcgdex_cache(repo: &Repository) -> Result<()> {
             series_resume.name
         );
 
-        let series = match tcgdex_en.serie.get(&series_resume.id).await {
+        let series = match api::Serie::get(&series_resume.id, "en").await {
             Ok(s) => s,
             Err(e) => {
                 tracing::error!("Failed to fetch series {}: {}", series_resume.id, e);
-                errors += 1;
                 continue;
             }
         };
 
         if let Err(e) = repo.upsert_series(&series).await {
             tracing::error!("Failed to save series {}: {}", series.id, e);
-            errors += 1;
             continue;
         }
 
@@ -163,30 +158,29 @@ async fn update_tcgdex_cache(repo: &Repository) -> Result<()> {
                 series.name
             );
 
-            let set = match tcgdex_en.set.get(&set_resume.id).await {
+            let set = match api::Set::get(&set_resume.id, "en").await {
                 Ok(s) => s,
                 Err(e) => {
                     tracing::error!("Failed to fetch set {}: {}", set_resume.id, e);
-                    errors += 1;
                     continue;
                 }
             };
 
             if let Err(e) = repo.upsert_set(&set).await {
                 tracing::error!("Failed to save set {}: {}", set.id, e);
-                errors += 1;
                 continue;
             }
 
             for card_resume in &set.cards {
-                match tcgdex_en.card.get(&card_resume.id).await {
-                    Ok(card) => match repo.upsert_card(&card).await {
-                        Ok(_) => cards_inserted += 1,
-                        Err(e) => {
+                match api::CardDetails::fetch(&card_resume.id, "en").await {
+                    Ok(card) => {
+                        if let Err(e) = repo.upsert_card(&card).await {
                             tracing::warn!("Failed to save card {}: {}", card.id, e);
                             cards_skipped += 1;
+                        } else {
+                            cards_inserted += 1;
                         }
-                    },
+                    }
                     Err(e) => {
                         tracing::warn!("Failed to fetch card {}: {}", card_resume.id, e);
                         cards_skipped += 1;
@@ -201,10 +195,9 @@ async fn update_tcgdex_cache(repo: &Repository) -> Result<()> {
     }
 
     tracing::info!(
-        "TCGdex cache update complete! Cards inserted: {}, Skipped: {}, Errors: {}",
+        "TCGdex cache update complete! Cards inserted: {}, Skipped: {}",
         cards_inserted,
-        cards_skipped,
-        errors
+        cards_skipped
     );
     Ok(())
 }

@@ -30,6 +30,7 @@ pub struct Card {
     pub category: String,
     pub hp: Option<i32>,
     pub types: Option<String>,
+    pub dex_id: Option<i32>,
     pub rarity: String,
     pub image: Option<String>,
     pub stage: Option<String>,

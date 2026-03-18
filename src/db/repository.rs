@@ -1,15 +1,14 @@
 use anyhow::Result;
 use sqlx::SqlitePool;
-use tcgdex_sdk::{Card as TcgdexCard, Serie as TcgdexSerie, Set as TcgdexSet};
 
+use crate::api::{CardDetails, Serie, Set};
 use super::models::{Card, PokedexCompletion, Series, Set as DbSet};
 
 pub struct Repository {
     pool: SqlitePool,
 }
 
-    #[allow(dead_code)]
-    impl Repository {
+impl Repository {
     pub fn new(pool: SqlitePool) -> Self {
         Self { pool }
     }
@@ -31,7 +30,7 @@ pub struct Repository {
         Ok(())
     }
 
-    pub async fn upsert_series(&self, series: &TcgdexSerie) -> Result<()> {
+    pub async fn upsert_series(&self, series: &Serie) -> Result<()> {
         sqlx::query(
             r#"
             INSERT INTO series (id, name, logo, updated_at)
@@ -51,7 +50,7 @@ pub struct Repository {
         Ok(())
     }
 
-    pub async fn upsert_set(&self, set: &TcgdexSet) -> Result<()> {
+    pub async fn upsert_set(&self, set: &Set) -> Result<()> {
         let total_cards = set.card_count.total;
 
         sqlx::query(
@@ -83,13 +82,15 @@ pub struct Repository {
         Ok(())
     }
 
-    pub async fn upsert_card(&self, card: &TcgdexCard) -> Result<()> {
+    pub async fn upsert_card(&self, card: &CardDetails) -> Result<()> {
         let types_json = card.types.as_ref().map(|t| serde_json::to_string(t).ok()).flatten();
+        let dex_id = card.dex_ids.as_ref().and_then(|ids| ids.first().copied());
+        let category = card.category.clone().unwrap_or_else(|| "Unknown".to_string());
 
         sqlx::query(
             r#"
-            INSERT INTO cards (id, set_id, local_id, name, category, hp, types, rarity, image, stage, evolves_from, illustrator, description, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            INSERT INTO cards (id, set_id, local_id, name, category, hp, types, dex_id, rarity, image, stage, evolves_from, illustrator, description, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT(id) DO UPDATE SET
                 set_id = excluded.set_id,
                 local_id = excluded.local_id,
@@ -97,6 +98,7 @@ pub struct Repository {
                 category = excluded.category,
                 hp = excluded.hp,
                 types = excluded.types,
+                dex_id = excluded.dex_id,
                 rarity = excluded.rarity,
                 image = excluded.image,
                 stage = excluded.stage,
@@ -110,9 +112,10 @@ pub struct Repository {
         .bind(&card.set.id)
         .bind(&card.local_id)
         .bind(&card.name)
-        .bind(&card.category)
+        .bind(&category)
         .bind(card.hp)
         .bind(&types_json)
+        .bind(dex_id)
         .bind(&card.rarity)
         .bind(&card.image)
         .bind(&card.stage)
@@ -121,22 +124,6 @@ pub struct Repository {
         .bind(&card.description)
         .execute(&self.pool)
         .await?;
-
-        if let Some(dex_ids) = &card.dex_ids {
-            for dex_id in dex_ids {
-                sqlx::query(
-                    r#"
-                    INSERT INTO pokemon_index (card_id, dex_id)
-                    VALUES (?, ?)
-                    ON CONFLICT(card_id, dex_id) DO NOTHING
-                    "#,
-                )
-                .bind(&card.id)
-                .bind(dex_id)
-                .execute(&self.pool)
-                .await?;
-            }
-        }
 
         Ok(())
     }
@@ -167,11 +154,11 @@ pub struct Repository {
     pub async fn get_missing_pokemon(&self) -> Result<Vec<i32>> {
         let missing: Vec<i32> = sqlx::query_scalar(
             r#"
-            SELECT DISTINCT pi.dex_id
-            FROM pokemon_index pi
-            LEFT JOIN collected_pokemon cp ON pi.dex_id = cp.dex_id
-            WHERE cp.dex_id IS NULL
-            ORDER BY pi.dex_id
+            SELECT DISTINCT c.dex_id
+            FROM cards c
+            LEFT JOIN collected_pokemon cp ON c.dex_id = cp.dex_id
+            WHERE c.dex_id IS NOT NULL AND cp.dex_id IS NULL
+            ORDER BY c.dex_id
             "#,
         )
         .fetch_all(&self.pool)
@@ -185,9 +172,10 @@ pub struct Repository {
             r#"
             SELECT 
                 COUNT(DISTINCT cp.dex_id) as collected,
-                COUNT(DISTINCT pi.dex_id) as total
-            FROM collected_pokemon cp
-            RIGHT JOIN pokemon_index pi ON cp.dex_id = pi.dex_id
+                COUNT(DISTINCT c.dex_id) as total
+            FROM cards c
+            LEFT JOIN collected_pokemon cp ON c.dex_id = cp.dex_id
+            WHERE c.dex_id IS NOT NULL
             "#,
         )
         .fetch_one(&self.pool)
@@ -199,6 +187,7 @@ pub struct Repository {
         })
     }
 
+    #[allow(dead_code)]
     pub async fn get_all_series(&self) -> Result<Vec<Series>> {
         let series = sqlx::query_as::<_, Series>(
             "SELECT id, name, logo, symbol FROM series ORDER BY name",
@@ -209,6 +198,7 @@ pub struct Repository {
         Ok(series)
     }
 
+    #[allow(dead_code)]
     pub async fn get_all_sets(&self) -> Result<Vec<DbSet>> {
         let sets = sqlx::query_as::<_, DbSet>(
             "SELECT id, name, logo, symbol, serie_id, release_date, tcg_online, total_cards FROM sets ORDER BY release_date DESC",
@@ -219,9 +209,10 @@ pub struct Repository {
         Ok(sets)
     }
 
+    #[allow(dead_code)]
     pub async fn get_cards_by_set(&self, set_id: &str) -> Result<Vec<Card>> {
         let cards = sqlx::query_as::<_, Card>(
-            "SELECT id, set_id, local_id, name, category, hp, types, rarity, image, stage, evolves_from, illustrator, description FROM cards WHERE set_id = ? ORDER BY local_id",
+            "SELECT id, set_id, local_id, name, category, hp, types, dex_id, rarity, image, stage, evolves_from, illustrator, description FROM cards WHERE set_id = ? ORDER BY local_id",
         )
         .bind(set_id)
         .fetch_all(&self.pool)
@@ -230,14 +221,14 @@ pub struct Repository {
         Ok(cards)
     }
 
+    #[allow(dead_code)]
     pub async fn get_cards_by_dex_id(&self, dex_id: i32) -> Result<Vec<Card>> {
         let cards = sqlx::query_as::<_, Card>(
             r#"
-            SELECT c.id, c.set_id, c.local_id, c.name, c.category, c.hp, c.types, c.rarity, c.image, c.stage, c.evolves_from, c.illustrator, c.description 
-            FROM cards c
-            JOIN pokemon_index pi ON c.id = pi.card_id
-            WHERE pi.dex_id = ?
-            ORDER BY c.set_id, c.local_id
+            SELECT id, set_id, local_id, name, category, hp, types, dex_id, rarity, image, stage, evolves_from, illustrator, description 
+            FROM cards
+            WHERE dex_id = ?
+            ORDER BY set_id, local_id
             "#,
         )
         .bind(dex_id)
@@ -245,26 +236,5 @@ pub struct Repository {
         .await?;
 
         Ok(cards)
-    }
-
-    pub async fn is_pokemon_collected(&self, dex_id: i32) -> Result<bool> {
-        let result: Option<(i64,)> = sqlx::query_as(
-            "SELECT COUNT(*) FROM collected_pokemon WHERE dex_id = ?",
-        )
-        .bind(dex_id)
-        .fetch_optional(&self.pool)
-        .await?;
-
-        Ok(result.map(|r| r.0 > 0).unwrap_or(false))
-    }
-
-    pub async fn get_total_pokemon_count(&self) -> Result<i64> {
-        let count: Option<(i64,)> = sqlx::query_as(
-            "SELECT COUNT(DISTINCT dex_id) FROM pokemon_index",
-        )
-        .fetch_optional(&self.pool)
-        .await?;
-
-        Ok(count.map(|r| r.0).unwrap_or(0))
     }
 }
