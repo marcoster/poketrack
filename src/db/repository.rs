@@ -1,5 +1,6 @@
 use anyhow::Result;
 use sqlx::SqlitePool;
+use std::collections::HashSet;
 
 use crate::api::{CardDetails, Serie, Set};
 use super::models::{Card, CardSetInfo, PokedexCompletion, Series, Set as DbSet, SetMissingStats};
@@ -149,6 +150,26 @@ impl Repository {
             .await?;
 
         Ok(())
+    }
+
+    pub async fn get_existing_dex_ids(&self, dex_ids: &[i32]) -> Result<HashSet<i32>> {
+        if dex_ids.is_empty() {
+            return Ok(HashSet::new());
+        }
+
+        let placeholders: Vec<String> = dex_ids.iter().map(|_| "?".to_string()).collect();
+        let query = format!(
+            "SELECT DISTINCT dex_id FROM cards WHERE dex_id IS NOT NULL AND dex_id IN ({})",
+            placeholders.join(", ")
+        );
+
+        let mut query_builder = sqlx::query_scalar::<_, i32>(&query);
+        for dex_id in dex_ids {
+            query_builder = query_builder.bind(dex_id);
+        }
+
+        let existing: Vec<i32> = query_builder.fetch_all(&self.pool).await?;
+        Ok(existing.into_iter().collect())
     }
 
     pub async fn get_missing_pokemon(&self) -> Result<Vec<i32>> {

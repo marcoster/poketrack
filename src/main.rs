@@ -24,10 +24,10 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     Add {
-        dex_id: i32,
+        pokemon: String,
     },
     Remove {
-        dex_id: i32,
+        pokemon: String,
     },
     List {
         #[arg(short, long)]
@@ -38,6 +38,34 @@ enum Commands {
         #[arg(long)]
         sets: bool,
     },
+}
+
+fn parse_dex_ids(input: &str) -> Result<Vec<i32>> {
+    let mut dex_ids = Vec::new();
+    for part in input.split(',') {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+        if part.contains('-') {
+            let range: Vec<&str> = part.split('-').collect();
+            if range.len() != 2 {
+                anyhow::bail!("Invalid range: {}", part);
+            }
+            let start: i32 = range[0].parse().map_err(|_| anyhow::anyhow!("Invalid number: {}", range[0]))?;
+            let end: i32 = range[1].parse().map_err(|_| anyhow::anyhow!("Invalid number: {}", range[1]))?;
+            if start > end {
+                anyhow::bail!("Invalid range: {}-{} (start > end)", start, end);
+            }
+            for i in start..=end {
+                dex_ids.push(i);
+            }
+        } else {
+            let dex_id: i32 = part.parse().map_err(|_| anyhow::anyhow!("Invalid number: {}", part))?;
+            dex_ids.push(dex_id);
+        }
+    }
+    Ok(dex_ids)
 }
 
 #[tokio::main]
@@ -63,13 +91,39 @@ async fn main() -> Result<()> {
 
     if let Some(command) = cli.command {
         match command {
-            Commands::Add { dex_id } => {
-                repo.mark_pokemon_collected(dex_id).await?;
-                println!("Added Pokemon #{} to collection", dex_id);
+            Commands::Add { pokemon } => {
+                let dex_ids = parse_dex_ids(&pokemon)?;
+                let existing = repo.get_existing_dex_ids(&dex_ids).await?;
+                
+                let mut added = 0;
+                for dex_id in &dex_ids {
+                    if existing.contains(dex_id) {
+                        repo.mark_pokemon_collected(*dex_id).await?;
+                        added += 1;
+                    } else {
+                        println!("Pokemon #{} not found in database, skipping", dex_id);
+                    }
+                }
+                if added > 0 {
+                    println!("Added {} Pokemon to collection", added);
+                }
             }
-            Commands::Remove { dex_id } => {
-                repo.unmark_pokemon_collected(dex_id).await?;
-                println!("Removed Pokemon #{} from collection", dex_id);
+            Commands::Remove { pokemon } => {
+                let dex_ids = parse_dex_ids(&pokemon)?;
+                let existing = repo.get_existing_dex_ids(&dex_ids).await?;
+                
+                let mut removed = 0;
+                for dex_id in &dex_ids {
+                    if existing.contains(dex_id) {
+                        repo.unmark_pokemon_collected(*dex_id).await?;
+                        removed += 1;
+                    } else {
+                        println!("Pokemon #{} not found in database, skipping", dex_id);
+                    }
+                }
+                if removed > 0 {
+                    println!("Removed {} Pokemon from collection", removed);
+                }
             }
             Commands::List { dex } => {
                 let cards = repo.get_pokemon_sets(dex).await?;
