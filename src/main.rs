@@ -40,6 +40,8 @@ enum Commands {
     Stats {
         #[arg(long)]
         sets: bool,
+        #[arg(long)]
+        sets_cards: bool,
     },
 }
 
@@ -180,8 +182,31 @@ async fn main() -> Result<()> {
                     }
                 }
             }
-            Commands::Stats { sets } => {
-                if sets {
+            Commands::Stats { sets, sets_cards } => {
+                if sets_cards {
+                    let stats = repo.get_set_missing_stats().await?;
+                    if stats.is_empty() {
+                        println!("No missing Pokemon! You have them all!");
+                    } else {
+                        println!("Missing Pokemon by Set:");
+                        for stat in &stats {
+                            println!(
+                                "  {}: {} - {} missing",
+                                stat.set_id, stat.set_name, stat.missing
+                            );
+                            let missing_cards = repo.get_set_missing_pokemon_details(&stat.set_id).await?;
+                            for chunk in missing_cards.chunks(4) {
+                                let card_strs: Vec<String> = chunk.iter()
+                                    .map(|c| match &c.en_name {
+                                        Some(name) => format!("#{} {}", c.dex_id, name),
+                                        None => format!("#{}", c.dex_id),
+                                    })
+                                    .collect();
+                                println!("    {}", card_strs.join(", "));
+                            }
+                        }
+                    }
+                } else if sets {
                     let stats = repo.get_set_missing_stats().await?;
                     if stats.is_empty() {
                         println!("No missing Pokemon! You have them all!");

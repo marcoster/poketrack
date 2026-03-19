@@ -3,7 +3,7 @@ use sqlx::SqlitePool;
 use std::collections::HashSet;
 
 use crate::api::{CardDetailsWithLang, SerieWithLang, SetWithLang};
-use super::models::{Card, CardSetInfo, PokedexCompletion, Series, Set as DbSet, SetMissingStats};
+use super::models::{Card, CardSetInfo, PokedexCompletion, Series, Set as DbSet, SetMissingCardInfo, SetMissingStats};
 
 pub struct Repository {
     pool: SqlitePool,
@@ -345,6 +345,24 @@ impl Repository {
         .await?;
 
         Ok(stats)
+    }
+
+    pub async fn get_set_missing_pokemon_details(&self, set_id: &str) -> Result<Vec<SetMissingCardInfo>> {
+        let cards: Vec<SetMissingCardInfo> = sqlx::query_as(
+            r#"
+            SELECT DISTINCT c.dex_id, t.en_name
+            FROM cards c
+            LEFT JOIN translations t ON c.dex_id = t.dex_id
+            LEFT JOIN collected_pokemon cp ON c.dex_id = cp.dex_id
+            WHERE c.set_id = ? AND c.dex_id IS NOT NULL AND cp.dex_id IS NULL
+            ORDER BY c.dex_id
+            "#
+        )
+        .bind(set_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(cards)
     }
 
     pub async fn upsert_translation(&self, dex_id: i32, en_name: &str) -> Result<bool> {
