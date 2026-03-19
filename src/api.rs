@@ -283,7 +283,7 @@ pub struct CardDetails {
     pub category: Option<String>,
     #[serde(rename = "dexId", default)]
     pub dex_ids: Option<Vec<i32>>,
-    #[serde(deserialize_with = "deserialize_hp")]
+    #[serde(default)]
     pub hp: Option<i32>,
     #[serde(default)]
     pub types: Option<Vec<String>>,
@@ -348,20 +348,25 @@ impl CardDetailsWithLang {
     pub async fn fetch(card_id: &str, lang: &str) -> anyhow::Result<Self> {
         let url = format!("https://api.tcgdex.net/v2/{}/cards/{}", lang, card_id);
         let response = CLIENT.get(&url).send().await?;
-        
+
         let status = response.status();
         let text = response.text().await?;
-        
+
         if !status.is_success() {
             tracing::warn!("API error for {}: {} - {}", url, status, text);
             anyhow::bail!("API returned status {} for {}", status, url);
         }
-        
+
         let card: CardDetails = serde_json::from_str(&text).map_err(|e| {
-            tracing::error!("Failed to parse JSON for {}: {}\nRaw response:\n{}", url, e, text);
+            tracing::error!(
+                "Failed to parse JSON for {}: {}\nRaw response:\n{}",
+                url,
+                e,
+                text
+            );
             anyhow::anyhow!("Failed to parse {}: {}", url, e)
         })?;
-        
+
         Ok(card.with_lang(lang))
     }
 }
@@ -370,20 +375,25 @@ impl SerieWithLang {
     pub async fn get(serie_id: &str, lang: &str) -> anyhow::Result<Self> {
         let url = format!("https://api.tcgdex.net/v2/{}/series/{}", lang, serie_id);
         let response = CLIENT.get(&url).send().await?;
-        
+
         let status = response.status();
         let text = response.text().await?;
-        
+
         if !status.is_success() {
             tracing::warn!("API error for {}: {} - {}", url, status, text);
             anyhow::bail!("API returned status {} for {}", status, url);
         }
-        
+
         let serie: Serie = serde_json::from_str(&text).map_err(|e| {
-            tracing::error!("Failed to parse JSON for {}: {}\nRaw response:\n{}", url, e, text);
+            tracing::error!(
+                "Failed to parse JSON for {}: {}\nRaw response:\n{}",
+                url,
+                e,
+                text
+            );
             anyhow::anyhow!("Failed to parse {}: {}", url, e)
         })?;
-        
+
         Ok(serie.with_lang(lang))
     }
 }
@@ -392,20 +402,25 @@ impl SerieWithLang {
     pub async fn list(lang: &str) -> anyhow::Result<Vec<SerieListItemWithLang>> {
         let url = format!("https://api.tcgdex.net/v2/{}/series", lang);
         let response = CLIENT.get(&url).send().await?;
-        
+
         let status = response.status();
         let text = response.text().await?;
-        
+
         if !status.is_success() {
             tracing::warn!("API error for {}: {} - {}", url, status, text);
             anyhow::bail!("API returned status {} for {}", status, url);
         }
-        
+
         let series: Vec<SerieListItem> = serde_json::from_str(&text).map_err(|e| {
-            tracing::error!("Failed to parse JSON for {}: {}\nRaw response:\n{}", url, e, text);
+            tracing::error!(
+                "Failed to parse JSON for {}: {}\nRaw response:\n{}",
+                url,
+                e,
+                text
+            );
             anyhow::anyhow!("Failed to parse {}: {}", url, e)
         })?;
-        
+
         Ok(series.iter().map(|s| s.with_lang(lang)).collect::<Vec<_>>())
     }
 }
@@ -414,20 +429,25 @@ impl SetWithLang {
     pub async fn get(set_id: &str, lang: &str) -> anyhow::Result<Self> {
         let url = format!("https://api.tcgdex.net/v2/{}/sets/{}", lang, set_id);
         let response = CLIENT.get(&url).send().await?;
-        
+
         let status = response.status();
         let text = response.text().await?;
-        
+
         if !status.is_success() {
             tracing::warn!("API error for {}: {} - {}", url, status, text);
             anyhow::bail!("API returned status {} for {}", status, url);
         }
-        
+
         let set: Set = serde_json::from_str(&text).map_err(|e| {
-            tracing::error!("Failed to parse JSON for {}: {}\nRaw response:\n{}", url, e, text);
+            tracing::error!(
+                "Failed to parse JSON for {}: {}\nRaw response:\n{}",
+                url,
+                e,
+                text
+            );
             anyhow::anyhow!("Failed to parse {}: {}", url, e)
         })?;
-        
+
         Ok(set.with_lang(lang))
     }
 }
