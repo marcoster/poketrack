@@ -383,6 +383,21 @@ impl Repository {
         Ok(translations.into_iter().collect())
     }
 
+    pub async fn get_english_pokemon_names(&self) -> Result<Vec<(i32, String)>> {
+        let names: Vec<(i32, String)> = sqlx::query_as(
+            r#"
+            SELECT DISTINCT dex_id, name 
+            FROM cards 
+            WHERE id LIKE 'en-%' AND dex_id IS NOT NULL
+            ORDER BY dex_id
+            "#
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(names)
+    }
+
     pub async fn clear_translations(&self) -> Result<()> {
         sqlx::query("DELETE FROM translations")
             .execute(&self.pool)

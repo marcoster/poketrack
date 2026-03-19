@@ -380,46 +380,16 @@ async fn fetch_english_translations(repo: &Repository, force: bool) -> Result<()
         repo.clear_translations().await?;
     }
 
-    let series_list = api::SerieWithLang::list("en").await?;
-    tracing::info!("Fetching English translations for {} Pokemon...", series_list.len());
+    tracing::info!("Fetching English translations from local database...");
 
+    let pokemon_names = repo.get_english_pokemon_names().await?;
     let mut translations_added = 0u64;
-    let mut sets_processed = 0u64;
 
-    for series_resume in &series_list {
-        let series = match api::SerieWithLang::get(&series_resume.id, "en").await {
-            Ok(s) => s,
-            Err(e) => {
-                tracing::warn!("Failed to fetch series {}: {}", series_resume.id, e);
-                continue;
+    for (dex_id, en_name) in pokemon_names {
+        if let Ok(inserted) = repo.upsert_translation(dex_id, &en_name).await {
+            if inserted {
+                translations_added += 1;
             }
-        };
-
-        for set_resume in &series.sets {
-            let set = match api::SetWithLang::get(&set_resume.id, "en").await {
-                Ok(s) => s,
-                Err(e) => {
-                    tracing::warn!("Failed to fetch set {}: {}", set_resume.id, e);
-                    continue;
-                }
-            };
-
-            for card_resume in &set.cards {
-                if let Ok(card) = api::CardDetailsWithLang::fetch(&card_resume.raw_id, "en").await {
-                    if let Some(dex_ids) = &card.dex_ids {
-                        for dex_id in dex_ids {
-                            if let Ok(inserted) = repo.upsert_translation(*dex_id, &card.name).await {
-                                if inserted {
-                                    translations_added += 1;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            sets_processed += 1;
-            tracing::debug!("Processed translations for set {} ({}/{})", set.id, sets_processed, series.sets.len());
         }
     }
 
