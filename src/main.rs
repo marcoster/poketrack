@@ -142,14 +142,21 @@ async fn main() -> Result<()> {
             }
             Commands::List { dex } => {
                 let cards = repo.get_pokemon_sets(dex).await?;
+                let translations = repo.get_all_translations().await?;
                 if cards.is_empty() {
                     println!("No cards found for Pokemon #{}", dex);
                 } else {
-                    println!("#{}", dex);
+                    let en_name = translations.get(&dex);
+                    if let Some(name) = en_name {
+                        println!("#{} - {}", dex, name);
+                    } else {
+                        println!("#{}", dex);
+                    }
                     for card in cards {
+                        let en_suffix = translations.get(&card.dex_id).map(|n| format!(" [EN: {}]", n)).unwrap_or_default();
                         println!(
-                            "  {}: {} ({}) - {}",
-                            card.set_id, card.set_name, card.local_id, card.rarity
+                            "  {}: {} ({}) - {}{}",
+                            card.set_id, card.set_name, card.local_id, card.rarity, en_suffix
                         );
                     }
                 }
@@ -288,7 +295,6 @@ async fn update_tcgdex_cache(repo: &Repository, force: bool) -> Result<()> {
                 }
             }
 
-            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         }
 
         tracing::info!("{} sets already complete, skipping", sets_skipped);
@@ -349,7 +355,7 @@ async fn update_tcgdex_cache(repo: &Repository, force: bool) -> Result<()> {
             sets_completed += 1;
             tracing::debug!("Set {} marked as finished", set.id);
 
-            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
         }
 
         total_cards_inserted += cards_inserted;
@@ -357,11 +363,66 @@ async fn update_tcgdex_cache(repo: &Repository, force: bool) -> Result<()> {
         total_sets_completed += sets_completed;
     }
 
+    tracing::info!("Fetching English translations...");
+    fetch_english_translations(repo, force).await?;
+
     tracing::info!(
         "TCGdex cache update complete! Sets completed: {}, Cards inserted: {}, Cards skipped: {}",
         total_sets_completed,
         total_cards_inserted,
         total_cards_skipped
     );
+    Ok(())
+}
+
+async fn fetch_english_translations(repo: &Repository, force: bool) -> Result<()> {
+    if force {
+        repo.clear_translations().await?;
+    }
+
+    let series_list = api::SerieWithLang::list("en").await?;
+    tracing::info!("Fetching English translations for {} Pokemon...", series_list.len());
+
+    let mut translations_added = 0u64;
+    let mut sets_processed = 0u64;
+
+    for series_resume in &series_list {
+        let series = match api::SerieWithLang::get(&series_resume.id, "en").await {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!("Failed to fetch series {}: {}", series_resume.id, e);
+                continue;
+            }
+        };
+
+        for set_resume in &series.sets {
+            let set = match api::SetWithLang::get(&set_resume.id, "en").await {
+                Ok(s) => s,
+                Err(e) => {
+                    tracing::warn!("Failed to fetch set {}: {}", set_resume.id, e);
+                    continue;
+                }
+            };
+
+            for card_resume in &set.cards {
+                if let Ok(card) = api::CardDetailsWithLang::fetch(&card_resume.raw_id, "en").await {
+                    if let Some(dex_ids) = &card.dex_ids {
+                        for dex_id in dex_ids {
+                            if let Ok(inserted) = repo.upsert_translation(*dex_id, &card.name).await {
+                                if inserted {
+                                    translations_added += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            sets_processed += 1;
+            tracing::debug!("Processed translations for set {} ({}/{})", set.id, sets_processed, series.sets.len());
+        }
+    }
+
+    tracing::info!("English translations complete! Added {} new translations", translations_added);
     Ok(())
 }

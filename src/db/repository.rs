@@ -312,7 +312,7 @@ impl Repository {
     pub async fn get_pokemon_sets(&self, dex_id: i32) -> Result<Vec<CardSetInfo>> {
         let cards = sqlx::query_as::<_, CardSetInfo>(
             r#"
-            SELECT c.id as card_id, c.set_id, s.name as set_name, c.local_id, c.rarity
+            SELECT c.id as card_id, c.set_id, s.name as set_name, c.local_id, c.rarity, c.dex_id
             FROM cards c
             JOIN sets s ON c.set_id = s.id
             WHERE c.dex_id = ?
@@ -345,5 +345,48 @@ impl Repository {
         .await?;
 
         Ok(stats)
+    }
+
+    pub async fn upsert_translation(&self, dex_id: i32, en_name: &str) -> Result<bool> {
+        let result = sqlx::query(
+            r#"
+            INSERT OR IGNORE INTO translations (dex_id, en_name)
+            VALUES (?, ?)
+            "#,
+        )
+        .bind(dex_id)
+        .bind(en_name)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(result.rows_affected() > 0)
+    }
+
+    pub async fn get_translation(&self, dex_id: i32) -> Result<Option<String>> {
+        let result: Option<(String,)> = sqlx::query_as(
+            "SELECT en_name FROM translations WHERE dex_id = ?"
+        )
+        .bind(dex_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(result.map(|r| r.0))
+    }
+
+    pub async fn get_all_translations(&self) -> Result<std::collections::HashMap<i32, String>> {
+        let translations: Vec<(i32, String)> = sqlx::query_as(
+            "SELECT dex_id, en_name FROM translations"
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(translations.into_iter().collect())
+    }
+
+    pub async fn clear_translations(&self) -> Result<()> {
+        sqlx::query("DELETE FROM translations")
+            .execute(&self.pool)
+            .await?;
+        Ok(())
     }
 }

@@ -38,6 +38,10 @@ pub async fn initialize_database(pool: &SqlitePool) -> Result<()> {
         .execute(pool)
         .await?;
 
+    sqlx::query(schema::CREATE_TRANSLATIONS_TABLE)
+        .execute(pool)
+        .await?;
+
     tracing::info!("Database schema initialized successfully");
     Ok(())
 }

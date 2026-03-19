@@ -51,6 +51,12 @@ pub struct CollectedPokemon {
     pub dex_id: i32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct Translation {
+    pub dex_id: i32,
+    pub en_name: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PokedexCompletion {
     pub collected: i64,
@@ -64,6 +70,7 @@ pub struct CardSetInfo {
     pub set_name: String,
     pub local_id: String,
     pub rarity: String,
+    pub dex_id: i32,
 }
 
 #[derive(Debug, Clone, FromRow)]

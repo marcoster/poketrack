@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS cards (
     hp INTEGER,
     types TEXT,
     dex_id INTEGER,
-    rarity TEXT NOT NULL,
+    rarity TEXT,
     image TEXT,
     stage TEXT,
     evolves_from TEXT,
@@ -61,6 +61,13 @@ pub const CREATE_COLLECTED_POKEMON_TABLE: &str = r#"
 CREATE TABLE IF NOT EXISTS collected_pokemon (
     dex_id INTEGER PRIMARY KEY,
     collected_at TEXT DEFAULT CURRENT_TIMESTAMP
+)
+"#;
+
+pub const CREATE_TRANSLATIONS_TABLE: &str = r#"
+CREATE TABLE IF NOT EXISTS translations (
+    dex_id INTEGER PRIMARY KEY,
+    en_name TEXT NOT NULL
 )
 "#;
 
