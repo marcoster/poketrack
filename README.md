@@ -1,32 +1,55 @@
-# Pokemon Card / Set Tracker
+# Pokemon Card Tracker
 
-This should get to be a Pokemon card Pokedex tracker with the ability to find the sets with the most missing cards.
+Track your Pokemon TCG collection by national dex number. Fetches card data from the TCGdex API and supports both English (EN) and Japanese (JA) language sets.
 
-This functionality helps a lot to find the best booster packs or boxes to open for missing cards.
+The real highlight for collectors that like to rip packs is the `stats --sets` command, which lists how many of your missing cards can be found in each set.
 
-## Functionality
-  - Pokedex tracker
-    - be able to track all pokemon by the national index
-    - easy function to add or remove a pokemon by national index
-  - Interact with tcgdex
-    - fetch available sets and pokemon in those sets
-    - generate a report of the missing pokemon and in which set how many of those are found
-    - search for this in english and japanese sets
+## Build
 
-## Technical details
-  - command line utility (for now)
-    - maybe extend to a GUI using iced-rs in the future
-  - store data in a local sqlite database
-  - if there is no database available, ask the user if a new one should be created
-    - the database file should also be an optional start parameter (--db) but default to poketrack.sqlite
-  - data to be stored in the database
-    - table of already collected cards
-    - it should also cache the data fetched from tcgdex
-      - sets with cards contained
-      - updating these tables should be done with the start parameter --update-tcgdex
-      - collected cards should persist such an update
+```bash
+cargo build --release
+```
 
+The executable will be at `target/release/poketrack` (or `target/debug/poketrack` for debug builds).
 
+## Setup
 
+On first run, the database is created automatically. Fetch card data with:
 
+```bash
+./poketrack --force --update-tcgdex
+```
 
+This fetches all sets and cards from both EN and JA APIs. Use `--force` for a full refresh or run without it for incremental updates.
+
+## Usage
+
+```bash
+# Add Pokemon to collection (supports ranges)
+./poketrack add 25          # Add Pikachu
+./poketrack add 1-20        # Add Bulbasaur through Squirtle
+./poketrack add 1,4,7       # Add Bulbasaur, Charmander, Squirtle
+
+# Remove Pokemon from collection
+./poketrack remove 25
+
+# List all cards for a Pokemon
+./poketrack list --dex 25
+
+# Show Pokedex completion
+./poketrack stats
+
+# Show missing Pokemon by set
+./poketrack stats --sets
+
+# Show all missing Pokemon
+./poketrack missing
+```
+
+## Database
+
+By default, data is stored in `poketrack.sqlite`. Override with:
+
+```bash
+./poketrack --db /path/to/database.sqlite [command]
+```
