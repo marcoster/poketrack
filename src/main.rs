@@ -153,7 +153,10 @@ async fn main() -> Result<()> {
                         println!("#{}", dex);
                     }
                     for card in cards {
-                        let en_suffix = translations.get(&card.dex_id).map(|n| format!(" [EN: {}]", n)).unwrap_or_default();
+                        let en_suffix = translations
+                            .get(&card.dex_id)
+                            .map(|n| format!(" [EN: {}]", n))
+                            .unwrap_or_default();
                         println!(
                             "  {}: {} ({}) - {}{}",
                             card.set_id, card.set_name, card.local_id, card.rarity, en_suffix
@@ -167,11 +170,13 @@ async fn main() -> Result<()> {
                     println!("No missing Pokemon! You have them all!");
                 } else {
                     println!("Missing Pokemon ({} total):", missing.len());
-                    for dex_id in missing.iter().take(50) {
-                        println!("  #{}", dex_id);
-                    }
-                    if missing.len() > 50 {
-                        println!("  ... and {} more", missing.len() - 50);
+                    let mut cnt: usize = 1;
+                    for dex_id in missing.iter() {
+                        print!(" #{} ", dex_id);
+                        if cnt % 10 == 0 {
+                            println!();
+                        }
+                        cnt += 1;
                     }
                 }
             }
@@ -294,7 +299,6 @@ async fn update_tcgdex_cache(repo: &Repository, force: bool) -> Result<()> {
                     ));
                 }
             }
-
         }
 
         tracing::info!("{} sets already complete, skipping", sets_skipped);
@@ -393,6 +397,9 @@ async fn fetch_english_translations(repo: &Repository, force: bool) -> Result<()
         }
     }
 
-    tracing::info!("English translations complete! Added {} new translations", translations_added);
+    tracing::info!(
+        "English translations complete! Added {} new translations",
+        translations_added
+    );
     Ok(())
 }
