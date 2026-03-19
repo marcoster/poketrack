@@ -19,6 +19,7 @@ pub struct Set {
     pub release_date: String,
     pub tcg_online: Option<String>,
     pub total_cards: i32,
+    pub finished: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]

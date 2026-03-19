@@ -17,6 +17,9 @@ struct Cli {
     #[arg(short, long)]
     update_tcgdex: bool,
 
+    #[arg(long)]
+    force: bool,
+
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -86,7 +89,8 @@ async fn main() -> Result<()> {
     let repo = Repository::new(pool);
 
     if cli.update_tcgdex {
-        update_tcgdex_cache(&repo).await?;
+        repo.ensure_finished_column().await?;
+        update_tcgdex_cache(&repo, cli.force).await?;
     }
 
     if let Some(command) = cli.command {
@@ -180,26 +184,22 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn update_tcgdex_cache(repo: &Repository) -> Result<()> {
-    tracing::info!("Starting TCGdex cache update (full refresh)...");
+async fn update_tcgdex_cache(repo: &Repository, force: bool) -> Result<()> {
+    let mode = if force { "force refresh" } else { "incremental" };
+    tracing::info!("Starting TCGdex cache update ({} mode)...", mode);
 
-    repo.clear_cache().await?;
+    if force {
+        repo.clear_cache().await?;
+    }
 
     let series_list = api::Serie::list("en").await?;
     let total_series = series_list.len();
     tracing::info!("Found {} series", total_series);
 
-    let mut cards_inserted: u64 = 0;
-    let mut cards_skipped: u64 = 0;
+    let mut sets_to_process: Vec<(String, String, String)> = Vec::new();
+    let mut sets_skipped = 0u64;
 
-    for (series_idx, series_resume) in series_list.iter().enumerate() {
-        tracing::info!(
-            "Processing series {}/{}: {}",
-            series_idx + 1,
-            total_series,
-            series_resume.name
-        );
-
+    for series_resume in &series_list {
         let series = match api::Serie::get(&series_resume.id, "en").await {
             Ok(s) => s,
             Err(e) => {
@@ -213,54 +213,98 @@ async fn update_tcgdex_cache(repo: &Repository) -> Result<()> {
             continue;
         }
 
-        let total_sets = series.sets.len();
-
-        for (set_idx, set_resume) in series.sets.iter().enumerate() {
-            tracing::debug!(
-                "Processing set {}/{} in series {}",
-                set_idx + 1,
-                total_sets,
-                series.name
-            );
-
-            let set = match api::Set::get(&set_resume.id, "en").await {
-                Ok(s) => s,
-                Err(e) => {
-                    tracing::error!("Failed to fetch set {}: {}", set_resume.id, e);
-                    continue;
+        for set_resume in &series.sets {
+            let api_total_cards = {
+                match api::Set::get(&set_resume.id, "en").await {
+                    Ok(s) => s.card_count.total as i32,
+                    Err(e) => {
+                        tracing::error!("Failed to fetch set {}: {}", set_resume.id, e);
+                        continue;
+                    }
                 }
             };
 
-            if let Err(e) = repo.upsert_set(&set).await {
-                tracing::error!("Failed to save set {}: {}", set.id, e);
-                continue;
-            }
-
-            for card_resume in &set.cards {
-                match api::CardDetails::fetch(&card_resume.id, "en").await {
-                    Ok(card) => {
-                        if let Err(e) = repo.upsert_card(&card).await {
-                            tracing::warn!("Failed to save card {}: {}", card.id, e);
-                            cards_skipped += 1;
-                        } else {
-                            cards_inserted += 1;
-                        }
-                    }
-                    Err(e) => {
-                        tracing::warn!("Failed to fetch card {}: {}", card_resume.id, e);
-                        cards_skipped += 1;
-                    }
+            let should_fetch = if force {
+                true
+            } else {
+                let db_total = repo.get_set_total_cards(&set_resume.id).await?;
+                let is_finished = repo.is_set_finished(&set_resume.id).await?;
+                
+                if is_finished && db_total == Some(api_total_cards) {
+                    sets_skipped += 1;
+                    false
+                } else {
+                    true
                 }
-            }
+            };
 
-            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            if should_fetch {
+                sets_to_process.push((set_resume.id.clone(), set_resume.name.clone(), series.name.clone()));
+            }
         }
 
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
     }
 
+    tracing::info!("{} sets already complete, skipping", sets_skipped);
+    tracing::info!("Processing {} new/updated sets...", sets_to_process.len());
+
+    let mut cards_inserted: u64 = 0;
+    let mut cards_skipped: u64 = 0;
+    let mut sets_completed = 0u64;
+
+    for (set_idx, (set_id, set_name, series_name)) in sets_to_process.iter().enumerate() {
+        tracing::info!(
+            "Processing set {}/{}: {} ({})",
+            set_idx + 1,
+            sets_to_process.len(),
+            set_name,
+            series_name
+        );
+
+        let set = match api::Set::get(set_id, "en").await {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::error!("Failed to fetch set {}: {}", set_id, e);
+                continue;
+            }
+        };
+
+        if let Err(e) = repo.upsert_set(&set).await {
+            tracing::error!("Failed to save set {}: {}", set.id, e);
+            continue;
+        }
+
+        let total_cards = set.cards.len();
+        tracing::debug!("Fetching {} cards for set {}...", total_cards, set.id);
+
+        for card_resume in &set.cards {
+            match api::CardDetails::fetch(&card_resume.id, "en").await {
+                Ok(card) => {
+                    if let Err(e) = repo.upsert_card(&card).await {
+                        tracing::warn!("Failed to save card {}: {}", card.id, e);
+                        cards_skipped += 1;
+                    } else {
+                        cards_inserted += 1;
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to fetch card {}: {}", card_resume.id, e);
+                    cards_skipped += 1;
+                }
+            }
+        }
+
+        repo.mark_set_finished(set_id).await?;
+        sets_completed += 1;
+        tracing::debug!("Set {} marked as finished", set.id);
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    }
+
     tracing::info!(
-        "TCGdex cache update complete! Cards inserted: {}, Skipped: {}",
+        "TCGdex cache update complete! Sets completed: {}, Cards inserted: {}, Cards skipped: {}",
+        sets_completed,
         cards_inserted,
         cards_skipped
     );

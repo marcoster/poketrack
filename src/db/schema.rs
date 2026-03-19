@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS sets (
     release_date TEXT NOT NULL,
     tcg_online TEXT,
     total_cards INTEGER NOT NULL DEFAULT 0,
+    finished INTEGER NOT NULL DEFAULT 0,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (serie_id) REFERENCES series(id)

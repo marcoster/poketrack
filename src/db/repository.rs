@@ -14,6 +14,23 @@ impl Repository {
         Self { pool }
     }
 
+    pub async fn ensure_finished_column(&self) -> Result<()> {
+        let result = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM pragma_table_info('sets') WHERE name = 'finished'"
+        )
+        .fetch_one(&self.pool)
+        .await?;
+
+        if result == 0 {
+            tracing::info!("Adding 'finished' column to sets table...");
+            sqlx::query("ALTER TABLE sets ADD COLUMN finished INTEGER NOT NULL DEFAULT 0")
+                .execute(&self.pool)
+                .await?;
+            tracing::info!("'finished' column added successfully");
+        }
+        Ok(())
+    }
+
     pub async fn clear_cache(&self) -> Result<()> {
         sqlx::query("DELETE FROM pokemon_index")
             .execute(&self.pool)
@@ -56,8 +73,8 @@ impl Repository {
 
         sqlx::query(
             r#"
-            INSERT INTO sets (id, name, logo, symbol, serie_id, release_date, tcg_online, total_cards, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            INSERT INTO sets (id, name, logo, symbol, serie_id, release_date, tcg_online, total_cards, finished, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP)
             ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 logo = excluded.logo,
@@ -81,6 +98,36 @@ impl Repository {
         .await?;
 
         Ok(())
+    }
+
+    pub async fn mark_set_finished(&self, set_id: &str) -> Result<()> {
+        sqlx::query("UPDATE sets SET finished = 1 WHERE id = ?")
+            .bind(set_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn get_set_total_cards(&self, set_id: &str) -> Result<Option<i32>> {
+        let result: Option<(i32,)> = sqlx::query_as(
+            "SELECT total_cards FROM sets WHERE id = ?"
+        )
+        .bind(set_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(result.map(|r| r.0))
+    }
+
+    pub async fn is_set_finished(&self, set_id: &str) -> Result<bool> {
+        let result: Option<(i64,)> = sqlx::query_as(
+            "SELECT finished FROM sets WHERE id = ?"
+        )
+        .bind(set_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(result.map(|r| r.0 != 0).unwrap_or(false))
     }
 
     pub async fn upsert_card(&self, card: &CardDetails) -> Result<()> {
@@ -222,7 +269,7 @@ impl Repository {
     #[allow(dead_code)]
     pub async fn get_all_sets(&self) -> Result<Vec<DbSet>> {
         let sets = sqlx::query_as::<_, DbSet>(
-            "SELECT id, name, logo, symbol, serie_id, release_date, tcg_online, total_cards FROM sets ORDER BY release_date DESC",
+            "SELECT id, name, logo, symbol, serie_id, release_date, tcg_online, total_cards, finished FROM sets ORDER BY release_date DESC",
         )
         .fetch_all(&self.pool)
         .await?;
