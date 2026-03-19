@@ -31,9 +31,7 @@ enum Commands {
     },
     List {
         #[arg(short, long)]
-        set: Option<String>,
-        #[arg(short, long)]
-        dex: Option<i32>,
+        dex: i32,
     },
     Missing,
     Stats,
@@ -70,16 +68,14 @@ async fn main() -> Result<()> {
                 repo.unmark_pokemon_collected(dex_id).await?;
                 println!("Removed Pokemon #{} from collection", dex_id);
             }
-            Commands::List { set, dex } => {
-                if let Some(set_id) = set {
-                    let cards = repo.get_cards_by_set(&set_id).await?;
+            Commands::List { dex } => {
+                let cards = repo.get_pokemon_sets(dex).await?;
+                if cards.is_empty() {
+                    println!("No cards found for Pokemon #{}", dex);
+                } else {
+                    println!("#{}", dex);
                     for card in cards {
-                        println!("{} - {}", card.id, card.name);
-                    }
-                } else if let Some(dex_id) = dex {
-                    let cards = repo.get_cards_by_dex_id(dex_id).await?;
-                    for card in cards {
-                        println!("{} - {} ({})", card.id, card.name, card.set_id);
+                        println!("  {}: {} ({}) - {}", card.set_id, card.set_name, card.local_id, card.rarity);
                     }
                 }
             }

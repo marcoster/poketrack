@@ -2,7 +2,7 @@ use anyhow::Result;
 use sqlx::SqlitePool;
 
 use crate::api::{CardDetails, Serie, Set};
-use super::models::{Card, PokedexCompletion, Series, Set as DbSet};
+use super::models::{Card, CardSetInfo, PokedexCompletion, Series, Set as DbSet};
 
 pub struct Repository {
     pool: SqlitePool,
@@ -229,6 +229,23 @@ impl Repository {
             FROM cards
             WHERE dex_id = ?
             ORDER BY set_id, local_id
+            "#,
+        )
+        .bind(dex_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(cards)
+    }
+
+    pub async fn get_pokemon_sets(&self, dex_id: i32) -> Result<Vec<CardSetInfo>> {
+        let cards = sqlx::query_as::<_, CardSetInfo>(
+            r#"
+            SELECT c.id as card_id, c.set_id, s.name as set_name, c.local_id, c.rarity
+            FROM cards c
+            JOIN sets s ON c.set_id = s.id
+            WHERE c.dex_id = ?
+            ORDER BY s.release_date DESC, c.local_id
             "#,
         )
         .bind(dex_id)

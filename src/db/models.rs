@@ -55,3 +55,12 @@ pub struct PokedexCompletion {
     pub collected: i64,
     pub total: i64,
 }
+
+#[derive(Debug, Clone, FromRow)]
+pub struct CardSetInfo {
+    pub card_id: String,
+    pub set_id: String,
+    pub set_name: String,
+    pub local_id: String,
+    pub rarity: String,
+}
