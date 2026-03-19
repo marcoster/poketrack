@@ -121,6 +121,21 @@ pub struct SerieListItem {
     pub name: String,
 }
 
+impl SerieListItem {
+    pub fn with_lang(&self, _lang: &str) -> SerieListItemWithLang {
+        SerieListItemWithLang {
+            id: self.id.clone(),
+            name: self.name.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SerieListItemWithLang {
+    pub id: String,
+    pub name: String,
+}
+
 #[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct Serie {
@@ -128,12 +143,48 @@ pub struct Serie {
     pub name: String,
     #[serde(default)]
     pub logo: Option<String>,
-    pub sets: Vec<SetListItem>,
+    pub sets: Vec<SerieListItem>,
+}
+
+impl Serie {
+    pub fn with_lang(&self, lang: &str) -> SerieWithLang {
+        SerieWithLang {
+            id: format!("{}-{}", lang, self.id),
+            name: self.name.clone(),
+            logo: self.logo.clone(),
+            sets: self.sets.iter().map(|s| s.with_lang(lang)).collect(),
+            language: lang.to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SerieWithLang {
+    pub id: String,
+    pub name: String,
+    pub logo: Option<String>,
+    pub sets: Vec<SerieListItemWithLang>,
+    pub language: String,
 }
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct SetListItem {
+    pub id: String,
+    pub name: String,
+}
+
+impl SetListItem {
+    pub fn with_lang(&self, lang: &str) -> SetListItemWithLang {
+        SetListItemWithLang {
+            id: format!("{}-{}", lang, self.id),
+            name: self.name.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SetListItemWithLang {
     pub id: String,
     pub name: String,
 }
@@ -157,6 +208,39 @@ pub struct Set {
     pub cards: Vec<CardResume>,
 }
 
+impl Set {
+    pub fn with_lang(&self, lang: &str) -> SetWithLang {
+        SetWithLang {
+            id: format!("{}-{}", lang, self.id),
+            name: self.name.clone(),
+            logo: self.logo.clone(),
+            symbol: self.symbol.clone(),
+            card_count: self.card_count.clone(),
+            serie_id: format!("{}-{}", lang, self.serie.id),
+            serie_name: self.serie.name.clone(),
+            tcg_online: self.tcg_online.clone(),
+            release_date: self.release_date.clone(),
+            cards: self.cards.iter().map(|c| c.with_lang(lang)).collect(),
+            language: lang.to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SetWithLang {
+    pub id: String,
+    pub name: String,
+    pub logo: Option<String>,
+    pub symbol: Option<String>,
+    pub card_count: CardCountResume,
+    pub serie_id: String,
+    pub serie_name: String,
+    pub tcg_online: Option<String>,
+    pub release_date: String,
+    pub cards: Vec<CardResumeWithLang>,
+    pub language: String,
+}
+
 #[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct CardResume {
@@ -165,6 +249,27 @@ pub struct CardResume {
     #[serde(rename = "localId")]
     pub local_id: String,
     #[serde(default)]
+    pub image: Option<String>,
+}
+
+impl CardResume {
+    pub fn with_lang(&self, lang: &str) -> CardResumeWithLang {
+        CardResumeWithLang {
+            raw_id: self.id.clone(),
+            id: format!("{}-{}", lang, self.id),
+            name: self.name.clone(),
+            local_id: self.local_id.clone(),
+            image: self.image.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CardResumeWithLang {
+    pub raw_id: String,
+    pub id: String,
+    pub name: String,
+    pub local_id: String,
     pub image: Option<String>,
 }
 
@@ -197,6 +302,49 @@ pub struct CardDetails {
 }
 
 impl CardDetails {
+    pub fn with_lang(self, lang: &str) -> CardDetailsWithLang {
+        CardDetailsWithLang {
+            id: format!("{}-{}", lang, self.id),
+            local_id: self.local_id,
+            name: self.name,
+            category: self.category,
+            dex_ids: self.dex_ids,
+            hp: self.hp,
+            types: self.types,
+            rarity: self.rarity,
+            image: self.image,
+            stage: self.stage,
+            evolves_from: self.evolves_from,
+            illustrator: self.illustrator,
+            description: self.description,
+            set_id: format!("{}-{}", lang, self.set.id),
+            set_name: self.set.name,
+            language: lang.to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CardDetailsWithLang {
+    pub id: String,
+    pub local_id: String,
+    pub name: String,
+    pub category: Option<String>,
+    pub dex_ids: Option<Vec<i32>>,
+    pub hp: Option<i32>,
+    pub types: Option<Vec<String>>,
+    pub rarity: String,
+    pub image: Option<String>,
+    pub stage: Option<String>,
+    pub evolves_from: Option<String>,
+    pub illustrator: Option<String>,
+    pub description: Option<String>,
+    pub set_id: String,
+    pub set_name: String,
+    pub language: String,
+}
+
+impl CardDetailsWithLang {
     pub async fn fetch(card_id: &str, lang: &str) -> anyhow::Result<Self> {
         let url = format!("https://api.tcgdex.net/v2/{}/cards/{}", lang, card_id);
         let response = CLIENT.get(&url).send().await?;
@@ -209,14 +357,16 @@ impl CardDetails {
             anyhow::bail!("API returned status {} for {}", status, url);
         }
         
-        serde_json::from_str::<CardDetails>(&text).map_err(|e| {
+        let card: CardDetails = serde_json::from_str(&text).map_err(|e| {
             tracing::error!("Failed to parse JSON for {}: {}\nRaw response:\n{}", url, e, text);
             anyhow::anyhow!("Failed to parse {}: {}", url, e)
-        })
+        })?;
+        
+        Ok(card.with_lang(lang))
     }
 }
 
-impl Serie {
+impl SerieWithLang {
     pub async fn get(serie_id: &str, lang: &str) -> anyhow::Result<Self> {
         let url = format!("https://api.tcgdex.net/v2/{}/series/{}", lang, serie_id);
         let response = CLIENT.get(&url).send().await?;
@@ -229,15 +379,17 @@ impl Serie {
             anyhow::bail!("API returned status {} for {}", status, url);
         }
         
-        serde_json::from_str::<Serie>(&text).map_err(|e| {
+        let serie: Serie = serde_json::from_str(&text).map_err(|e| {
             tracing::error!("Failed to parse JSON for {}: {}\nRaw response:\n{}", url, e, text);
             anyhow::anyhow!("Failed to parse {}: {}", url, e)
-        })
+        })?;
+        
+        Ok(serie.with_lang(lang))
     }
 }
 
-impl Serie {
-    pub async fn list(lang: &str) -> anyhow::Result<Vec<SerieListItem>> {
+impl SerieWithLang {
+    pub async fn list(lang: &str) -> anyhow::Result<Vec<SerieListItemWithLang>> {
         let url = format!("https://api.tcgdex.net/v2/{}/series", lang);
         let response = CLIENT.get(&url).send().await?;
         
@@ -249,14 +401,16 @@ impl Serie {
             anyhow::bail!("API returned status {} for {}", status, url);
         }
         
-        serde_json::from_str::<Vec<SerieListItem>>(&text).map_err(|e| {
+        let series: Vec<SerieListItem> = serde_json::from_str(&text).map_err(|e| {
             tracing::error!("Failed to parse JSON for {}: {}\nRaw response:\n{}", url, e, text);
             anyhow::anyhow!("Failed to parse {}: {}", url, e)
-        })
+        })?;
+        
+        Ok(series.iter().map(|s| s.with_lang(lang)).collect::<Vec<_>>())
     }
 }
 
-impl Set {
+impl SetWithLang {
     pub async fn get(set_id: &str, lang: &str) -> anyhow::Result<Self> {
         let url = format!("https://api.tcgdex.net/v2/{}/sets/{}", lang, set_id);
         let response = CLIENT.get(&url).send().await?;
@@ -269,9 +423,11 @@ impl Set {
             anyhow::bail!("API returned status {} for {}", status, url);
         }
         
-        serde_json::from_str::<Set>(&text).map_err(|e| {
+        let set: Set = serde_json::from_str(&text).map_err(|e| {
             tracing::error!("Failed to parse JSON for {}: {}\nRaw response:\n{}", url, e, text);
             anyhow::anyhow!("Failed to parse {}: {}", url, e)
-        })
+        })?;
+        
+        Ok(set.with_lang(lang))
     }
 }

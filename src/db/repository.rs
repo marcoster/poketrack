@@ -2,7 +2,7 @@ use anyhow::Result;
 use sqlx::SqlitePool;
 use std::collections::HashSet;
 
-use crate::api::{CardDetails, Serie, Set};
+use crate::api::{CardDetailsWithLang, SerieWithLang, SetWithLang};
 use super::models::{Card, CardSetInfo, PokedexCompletion, Series, Set as DbSet, SetMissingStats};
 
 pub struct Repository {
@@ -48,7 +48,7 @@ impl Repository {
         Ok(())
     }
 
-    pub async fn upsert_series(&self, series: &Serie) -> Result<()> {
+    pub async fn upsert_series(&self, series: &SerieWithLang) -> Result<()> {
         sqlx::query(
             r#"
             INSERT INTO series (id, name, logo, updated_at)
@@ -68,7 +68,7 @@ impl Repository {
         Ok(())
     }
 
-    pub async fn upsert_set(&self, set: &Set) -> Result<()> {
+    pub async fn upsert_set(&self, set: &SetWithLang) -> Result<()> {
         let total_cards = set.card_count.total;
 
         sqlx::query(
@@ -90,7 +90,7 @@ impl Repository {
         .bind(&set.name)
         .bind(&set.logo)
         .bind(&set.symbol)
-        .bind(&set.serie.id)
+        .bind(&set.serie_id)
         .bind(&set.release_date)
         .bind(&set.tcg_online)
         .bind(total_cards)
@@ -130,7 +130,7 @@ impl Repository {
         Ok(result.map(|r| r.0 != 0).unwrap_or(false))
     }
 
-    pub async fn upsert_card(&self, card: &CardDetails) -> Result<()> {
+    pub async fn upsert_card(&self, card: &CardDetailsWithLang) -> Result<()> {
         let types_json = card.types.as_ref().map(|t| serde_json::to_string(t).ok()).flatten();
         let dex_id = card.dex_ids.as_ref().and_then(|ids| ids.first().copied());
         let category = card.category.clone().unwrap_or_else(|| "Unknown".to_string());
@@ -157,7 +157,7 @@ impl Repository {
             "#,
         )
         .bind(&card.id)
-        .bind(&card.set.id)
+        .bind(&card.set_id)
         .bind(&card.local_id)
         .bind(&card.name)
         .bind(&category)
