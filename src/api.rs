@@ -287,7 +287,8 @@ pub struct CardDetails {
     pub hp: Option<i32>,
     #[serde(default)]
     pub types: Option<Vec<String>>,
-    pub rarity: String,
+    #[serde(default)]
+    pub rarity: Option<String>,
     #[serde(default)]
     pub image: Option<String>,
     #[serde(default)]
@@ -333,7 +334,7 @@ pub struct CardDetailsWithLang {
     pub dex_ids: Option<Vec<i32>>,
     pub hp: Option<i32>,
     pub types: Option<Vec<String>>,
-    pub rarity: String,
+    pub rarity: Option<String>,
     pub image: Option<String>,
     pub stage: Option<String>,
     pub evolves_from: Option<String>,

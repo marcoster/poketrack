@@ -260,8 +260,16 @@ async fn update_tcgdex_cache(repo: &Repository, force: bool) -> Result<()> {
                 let should_fetch = if force {
                     true
                 } else {
-                    let db_total = repo.get_set_total_cards(&set_resume.id).await?;
-                    let is_finished = repo.is_set_finished(&set_resume.id).await?;
+                    let db_total = repo.get_set_total_cards(&set_resume.id, lang).await?;
+                    let is_finished = repo.is_set_finished(&set_resume.id, lang).await?;
+
+                    tracing::info!(
+                        "{} is_finished {}, total: {:?}, api_total: {}",
+                        set_resume.id,
+                        is_finished,
+                        db_total,
+                        api_total_cards,
+                    );
 
                     if is_finished && db_total == Some(api_total_cards) {
                         sets_skipped += 1;
@@ -337,7 +345,7 @@ async fn update_tcgdex_cache(repo: &Repository, force: bool) -> Result<()> {
                 }
             }
 
-            repo.mark_set_finished(set_id).await?;
+            repo.mark_set_finished(set_id, lang).await?;
             sets_completed += 1;
             tracing::debug!("Set {} marked as finished", set.id);
 

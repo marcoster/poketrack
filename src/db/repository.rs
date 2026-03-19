@@ -100,30 +100,33 @@ impl Repository {
         Ok(())
     }
 
-    pub async fn mark_set_finished(&self, set_id: &str) -> Result<()> {
+    pub async fn mark_set_finished(&self, set_id: &str, lang: &str) -> Result<()> {
+        let full_id = format!("{}-{}", lang, set_id);
         sqlx::query("UPDATE sets SET finished = 1 WHERE id = ?")
-            .bind(set_id)
+            .bind(&full_id)
             .execute(&self.pool)
             .await?;
         Ok(())
     }
 
-    pub async fn get_set_total_cards(&self, set_id: &str) -> Result<Option<i32>> {
+    pub async fn get_set_total_cards(&self, set_id: &str, lang: &str) -> Result<Option<i32>> {
+        let full_id = format!("{}-{}", lang, set_id);
         let result: Option<(i32,)> = sqlx::query_as(
             "SELECT total_cards FROM sets WHERE id = ?"
         )
-        .bind(set_id)
+        .bind(&full_id)
         .fetch_optional(&self.pool)
         .await?;
 
         Ok(result.map(|r| r.0))
     }
 
-    pub async fn is_set_finished(&self, set_id: &str) -> Result<bool> {
+    pub async fn is_set_finished(&self, set_id: &str, lang: &str) -> Result<bool> {
+        let full_id = format!("{}-{}", lang, set_id);
         let result: Option<(i64,)> = sqlx::query_as(
             "SELECT finished FROM sets WHERE id = ?"
         )
-        .bind(set_id)
+        .bind(&full_id)
         .fetch_optional(&self.pool)
         .await?;
 
