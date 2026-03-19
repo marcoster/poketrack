@@ -64,3 +64,10 @@ pub struct CardSetInfo {
     pub local_id: String,
     pub rarity: String,
 }
+
+#[derive(Debug, Clone, FromRow)]
+pub struct SetMissingStats {
+    pub set_id: String,
+    pub set_name: String,
+    pub missing: i64,
+}

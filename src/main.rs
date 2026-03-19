@@ -34,7 +34,10 @@ enum Commands {
         dex: i32,
     },
     Missing,
-    Stats,
+    Stats {
+        #[arg(long)]
+        sets: bool,
+    },
 }
 
 #[tokio::main]
@@ -93,17 +96,29 @@ async fn main() -> Result<()> {
                     }
                 }
             }
-            Commands::Stats => {
-                let completion = repo.get_pokedex_completion().await?;
-                let pct = if completion.total > 0 {
-                    (completion.collected as f64 / completion.total as f64 * 100.0).round()
+            Commands::Stats { sets } => {
+                if sets {
+                    let stats = repo.get_set_missing_stats().await?;
+                    if stats.is_empty() {
+                        println!("No missing Pokemon! You have them all!");
+                    } else {
+                        println!("Missing Pokemon by Set:");
+                        for stat in stats {
+                            println!("  {}: {} - {} missing", stat.set_id, stat.set_name, stat.missing);
+                        }
+                    }
                 } else {
-                    0.0
-                };
-                println!(
-                    "Pokedex: {}/{} Pokemon collected ({:.0}%)",
-                    completion.collected, completion.total, pct
-                );
+                    let completion = repo.get_pokedex_completion().await?;
+                    let pct = if completion.total > 0 {
+                        (completion.collected as f64 / completion.total as f64 * 100.0).round()
+                    } else {
+                        0.0
+                    };
+                    println!(
+                        "Pokedex: {}/{} Pokemon collected ({:.0}%)",
+                        completion.collected, completion.total, pct
+                    );
+                }
             }
         }
     }

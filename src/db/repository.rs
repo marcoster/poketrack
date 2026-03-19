@@ -2,7 +2,7 @@ use anyhow::Result;
 use sqlx::SqlitePool;
 
 use crate::api::{CardDetails, Serie, Set};
-use super::models::{Card, CardSetInfo, PokedexCompletion, Series, Set as DbSet};
+use super::models::{Card, CardSetInfo, PokedexCompletion, Series, Set as DbSet, SetMissingStats};
 
 pub struct Repository {
     pool: SqlitePool,
@@ -253,5 +253,26 @@ impl Repository {
         .await?;
 
         Ok(cards)
+    }
+
+    pub async fn get_set_missing_stats(&self) -> Result<Vec<SetMissingStats>> {
+        let stats = sqlx::query_as::<_, SetMissingStats>(
+            r#"
+            SELECT 
+                s.id as set_id,
+                s.name as set_name,
+                COUNT(DISTINCT c.dex_id) - COUNT(DISTINCT cp.dex_id) as missing
+            FROM sets s
+            JOIN cards c ON c.set_id = s.id AND c.dex_id IS NOT NULL
+            LEFT JOIN collected_pokemon cp ON c.dex_id = cp.dex_id
+            GROUP BY s.id
+            HAVING missing > 0
+            ORDER BY missing DESC
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(stats)
     }
 }
