@@ -2,8 +2,10 @@ use anyhow::Result;
 use sqlx::SqlitePool;
 use std::collections::HashSet;
 
+use super::models::{
+    Card, CardSetInfo, PokedexCompletion, Series, Set as DbSet, SetMissingCardInfo, SetMissingStats,
+};
 use crate::api::{CardDetailsWithLang, SerieWithLang, SetWithLang};
-use super::models::{Card, CardSetInfo, PokedexCompletion, Series, Set as DbSet, SetMissingCardInfo, SetMissingStats};
 
 pub struct Repository {
     pool: SqlitePool,
@@ -16,7 +18,7 @@ impl Repository {
 
     pub async fn ensure_finished_column(&self) -> Result<()> {
         let result = sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*) FROM pragma_table_info('sets') WHERE name = 'finished'"
+            "SELECT COUNT(*) FROM pragma_table_info('sets') WHERE name = 'finished'",
         )
         .fetch_one(&self.pool)
         .await?;
@@ -35,12 +37,8 @@ impl Repository {
         sqlx::query("DELETE FROM pokemon_index")
             .execute(&self.pool)
             .await?;
-        sqlx::query("DELETE FROM cards")
-            .execute(&self.pool)
-            .await?;
-        sqlx::query("DELETE FROM sets")
-            .execute(&self.pool)
-            .await?;
+        sqlx::query("DELETE FROM cards").execute(&self.pool).await?;
+        sqlx::query("DELETE FROM sets").execute(&self.pool).await?;
         sqlx::query("DELETE FROM series")
             .execute(&self.pool)
             .await?;
@@ -111,32 +109,44 @@ impl Repository {
 
     pub async fn get_set_total_cards(&self, set_id: &str, lang: &str) -> Result<Option<i32>> {
         let full_id = format!("{}-{}", lang, set_id);
-        let result: Option<(i32,)> = sqlx::query_as(
-            "SELECT total_cards FROM sets WHERE id = ?"
-        )
-        .bind(&full_id)
-        .fetch_optional(&self.pool)
-        .await?;
+        let result: Option<(i32,)> = sqlx::query_as("SELECT total_cards FROM sets WHERE id = ?")
+            .bind(&full_id)
+            .fetch_optional(&self.pool)
+            .await?;
 
+        Ok(result.map(|r| r.0))
+    }
+
+    pub async fn count_set_cards(&self, set_id: &str, lang: &str) -> Result<Option<i32>> {
+        let full_id = format!("{}-{}", lang, set_id);
+        let result: Option<(i32,)> = sqlx::query_as("SELECT COUNT(*) from cards where set_id == ?")
+            .bind(full_id)
+            .fetch_optional(&self.pool)
+            .await?;
         Ok(result.map(|r| r.0))
     }
 
     pub async fn is_set_finished(&self, set_id: &str, lang: &str) -> Result<bool> {
         let full_id = format!("{}-{}", lang, set_id);
-        let result: Option<(i64,)> = sqlx::query_as(
-            "SELECT finished FROM sets WHERE id = ?"
-        )
-        .bind(&full_id)
-        .fetch_optional(&self.pool)
-        .await?;
+        let result: Option<(i64,)> = sqlx::query_as("SELECT finished FROM sets WHERE id = ?")
+            .bind(&full_id)
+            .fetch_optional(&self.pool)
+            .await?;
 
         Ok(result.map(|r| r.0 != 0).unwrap_or(false))
     }
 
     pub async fn upsert_card(&self, card: &CardDetailsWithLang) -> Result<()> {
-        let types_json = card.types.as_ref().map(|t| serde_json::to_string(t).ok()).flatten();
+        let types_json = card
+            .types
+            .as_ref()
+            .map(|t| serde_json::to_string(t).ok())
+            .flatten();
         let dex_id = card.dex_ids.as_ref().and_then(|ids| ids.first().copied());
-        let category = card.category.clone().unwrap_or_else(|| "Unknown".to_string());
+        let category = card
+            .category
+            .clone()
+            .unwrap_or_else(|| "Unknown".to_string());
 
         sqlx::query(
             r#"
@@ -260,11 +270,10 @@ impl Repository {
 
     #[allow(dead_code)]
     pub async fn get_all_series(&self) -> Result<Vec<Series>> {
-        let series = sqlx::query_as::<_, Series>(
-            "SELECT id, name, logo, symbol FROM series ORDER BY name",
-        )
-        .fetch_all(&self.pool)
-        .await?;
+        let series =
+            sqlx::query_as::<_, Series>("SELECT id, name, logo, symbol FROM series ORDER BY name")
+                .fetch_all(&self.pool)
+                .await?;
 
         Ok(series)
     }
@@ -347,7 +356,10 @@ impl Repository {
         Ok(stats)
     }
 
-    pub async fn get_set_missing_pokemon_details(&self, set_id: &str) -> Result<Vec<SetMissingCardInfo>> {
+    pub async fn get_set_missing_pokemon_details(
+        &self,
+        set_id: &str,
+    ) -> Result<Vec<SetMissingCardInfo>> {
         let cards: Vec<SetMissingCardInfo> = sqlx::query_as(
             r#"
             SELECT DISTINCT c.dex_id, t.en_name
@@ -356,7 +368,7 @@ impl Repository {
             LEFT JOIN collected_pokemon cp ON c.dex_id = cp.dex_id
             WHERE c.set_id = ? AND c.dex_id IS NOT NULL AND cp.dex_id IS NULL
             ORDER BY c.dex_id
-            "#
+            "#,
         )
         .bind(set_id)
         .fetch_all(&self.pool)
@@ -381,22 +393,20 @@ impl Repository {
     }
 
     pub async fn get_translation(&self, dex_id: i32) -> Result<Option<String>> {
-        let result: Option<(String,)> = sqlx::query_as(
-            "SELECT en_name FROM translations WHERE dex_id = ?"
-        )
-        .bind(dex_id)
-        .fetch_optional(&self.pool)
-        .await?;
+        let result: Option<(String,)> =
+            sqlx::query_as("SELECT en_name FROM translations WHERE dex_id = ?")
+                .bind(dex_id)
+                .fetch_optional(&self.pool)
+                .await?;
 
         Ok(result.map(|r| r.0))
     }
 
     pub async fn get_all_translations(&self) -> Result<std::collections::HashMap<i32, String>> {
-        let translations: Vec<(i32, String)> = sqlx::query_as(
-            "SELECT dex_id, en_name FROM translations"
-        )
-        .fetch_all(&self.pool)
-        .await?;
+        let translations: Vec<(i32, String)> =
+            sqlx::query_as("SELECT dex_id, en_name FROM translations")
+                .fetch_all(&self.pool)
+                .await?;
 
         Ok(translations.into_iter().collect())
     }
@@ -408,7 +418,7 @@ impl Repository {
             FROM cards 
             WHERE id LIKE 'en-%' AND dex_id IS NOT NULL
             ORDER BY dex_id
-            "#
+            "#,
         )
         .fetch_all(&self.pool)
         .await?;

@@ -36,7 +36,10 @@ enum Commands {
         #[arg(short, long)]
         dex: i32,
     },
-    Missing,
+    Missing {
+        #[arg(short, long)]
+        name: bool,
+    },
     Stats {
         #[arg(long)]
         sets: bool,
@@ -166,10 +169,20 @@ async fn main() -> Result<()> {
                     }
                 }
             }
-            Commands::Missing => {
+            Commands::Missing { name } => {
                 let missing = repo.get_missing_pokemon().await?;
                 if missing.is_empty() {
                     println!("No missing Pokemon! You have them all!");
+                } else if name {
+                    let translations = repo.get_all_translations().await?;
+                    for dex_id in missing.iter() {
+                        let en_name = translations.get(dex_id);
+                        if let Some(n) = en_name {
+                            println!("#{} - {}", dex_id, n);
+                        } else {
+                            println!("#{}", dex_id);
+                        }
+                    }
                 } else {
                     println!("Missing Pokemon ({} total):", missing.len());
                     let mut cnt: usize = 1;
@@ -194,9 +207,11 @@ async fn main() -> Result<()> {
                                 "  {}: {} - {} missing",
                                 stat.set_id, stat.set_name, stat.missing
                             );
-                            let missing_cards = repo.get_set_missing_pokemon_details(&stat.set_id).await?;
+                            let missing_cards =
+                                repo.get_set_missing_pokemon_details(&stat.set_id).await?;
                             for chunk in missing_cards.chunks(4) {
-                                let card_strs: Vec<String> = chunk.iter()
+                                let card_strs: Vec<String> = chunk
+                                    .iter()
                                     .map(|c| match &c.en_name {
                                         Some(name) => format!("#{} {}", c.dex_id, name),
                                         None => format!("#{}", c.dex_id),
@@ -297,7 +312,8 @@ async fn update_tcgdex_cache(repo: &Repository, force: bool) -> Result<()> {
                 let should_fetch = if force {
                     true
                 } else {
-                    let db_total = repo.get_set_total_cards(&set_resume.id, lang).await?;
+                    //let db_total = repo.get_set_total_cards(&set_resume.id, lang).await?;
+                    let db_total = repo.count_set_cards(&set_resume.id, lang).await?;
                     let is_finished = repo.is_set_finished(&set_resume.id, lang).await?;
 
                     tracing::info!(
