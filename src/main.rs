@@ -299,6 +299,9 @@ async fn update_tcgdex_cache(repo: &Repository, force: bool) -> Result<()> {
             }
 
             for set_resume in &series.sets {
+                if set_resume.id != "S8" {
+                    continue;
+                }
                 let api_total_cards = {
                     match api::SetWithLang::get(&set_resume.id, lang).await {
                         Ok(s) => s.card_count.total as i32,
@@ -370,6 +373,7 @@ async fn update_tcgdex_cache(repo: &Repository, force: bool) -> Result<()> {
                     continue;
                 }
             };
+            tracing::info!("set: {set:?}");
 
             if let Err(e) = repo.upsert_set(&set).await {
                 tracing::error!("Failed to save set {}: {}", set.id, e);
@@ -377,9 +381,10 @@ async fn update_tcgdex_cache(repo: &Repository, force: bool) -> Result<()> {
             }
 
             let total_cards = set.cards.len();
-            tracing::debug!("Fetching {} cards for set {}...", total_cards, set.id);
+            tracing::info!("Fetching {} cards for set {}...", total_cards, set.id);
 
             for card_resume in &set.cards {
+                tracing::info!("cards: {:?}", card_resume);
                 match api::CardDetailsWithLang::fetch(&card_resume.raw_id, lang).await {
                     Ok(card) => {
                         if let Err(e) = repo.upsert_card(&card).await {

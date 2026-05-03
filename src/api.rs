@@ -430,7 +430,7 @@ impl SetWithLang {
     pub async fn get(set_id: &str, lang: &str) -> anyhow::Result<Self> {
         let url = format!("https://api.tcgdex.net/v2/{}/sets/{}", lang, set_id);
         let response = CLIENT.get(&url).send().await?;
-
+        tracing::info!("response: {response:?}");
         let status = response.status();
         let text = response.text().await?;
 
