@@ -41,5 +41,4 @@ pub struct SetMissingStats {
 #[derive(Debug, Clone, FromRow)]
 pub struct SetMissingCardInfo {
     pub dex_id: i32,
-    pub en_name: Option<String>,
 }

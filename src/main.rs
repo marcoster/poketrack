@@ -49,6 +49,8 @@ enum Commands {
         jp: bool,
         #[arg(long, conflicts_with = "jp")]
         en: bool,
+        #[arg(long)]
+        name: bool,
     },
 }
 
@@ -199,9 +201,14 @@ async fn main() -> Result<()> {
                     }
                 }
             }
-            Commands::Stats { sets, sets_cards, jp, en } => {
+            Commands::Stats { sets, sets_cards, jp, en, name } => {
                 let lang = if jp { Some("ja") } else if en { Some("en") } else { None };
                 if sets_cards {
+                    let translations = if name {
+                        Some(repo.get_all_translations().await?)
+                    } else {
+                        None
+                    };
                     let stats = repo.get_set_missing_stats(lang).await?;
                     if stats.is_empty() {
                         println!("No missing Pokemon! You have them all!");
@@ -217,9 +224,14 @@ async fn main() -> Result<()> {
                             for chunk in missing_cards.chunks(4) {
                                 let card_strs: Vec<String> = chunk
                                     .iter()
-                                    .map(|c| match &c.en_name {
-                                        Some(name) => format!("#{} {}", c.dex_id, name),
-                                        None => format!("#{}", c.dex_id),
+                                    .map(|c| {
+                                        let en_name = translations.as_ref()
+                                            .and_then(|t| t.get(&c.dex_id))
+                                            .map(|s| s.as_str());
+                                        match en_name {
+                                            Some(n) => format!("#{} {}", c.dex_id, n),
+                                            None => format!("#{}", c.dex_id),
+                                        }
                                     })
                                     .collect();
                                 println!("    {}", card_strs.join(", "));

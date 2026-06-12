@@ -350,8 +350,7 @@ impl Repository {
         let cards = sqlx::query_as::<_, SetMissingCardInfo>(
             r#"
             SELECT DISTINCT
-                cards.dex_id,
-                NULL as en_name
+                cards.dex_id
             FROM cards
             LEFT JOIN collected_pokemon cp ON cards.dex_id = cp.dex_id
             WHERE cards.set_id = ? AND cp.dex_id IS NULL AND cards.dex_id IS NOT NULL
