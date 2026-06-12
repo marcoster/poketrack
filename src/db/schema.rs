@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS sets (
     logo TEXT,
     symbol TEXT,
     serie_id TEXT NOT NULL,
-    release_date TEXT NOT NULL,
+    release_date TEXT,
     tcg_online TEXT,
     total_cards INTEGER NOT NULL DEFAULT 0,
     finished INTEGER NOT NULL DEFAULT 0,

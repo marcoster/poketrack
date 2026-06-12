@@ -1,2 +1,3 @@
 /target
 *.sqlite
+/cards-database-json

@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use super::models::{
     Card, CardSetInfo, PokedexCompletion, Series, Set as DbSet, SetMissingCardInfo, SetMissingStats,
 };
-use crate::api::{CardDetailsWithLang, SerieWithLang, SetWithLang};
+use crate::cards_database::{CardData, SerieData, SetData};
 
 pub struct Repository {
     pool: SqlitePool,
@@ -46,7 +46,14 @@ impl Repository {
         Ok(())
     }
 
-    pub async fn upsert_series(&self, series: &SerieWithLang) -> Result<()> {
+    pub async fn upsert_series(&self, series: &SerieData, lang: &str) -> Result<()> {
+        let id = format!("{}-{}", lang, series.id);
+        let name = match lang {
+            "en" => series.name_en.as_deref().unwrap_or(""),
+            "ja" => series.name_ja.as_deref().unwrap_or(""),
+            _ => "",
+        };
+
         sqlx::query(
             r#"
             INSERT INTO series (id, name, logo, updated_at)
@@ -57,8 +64,8 @@ impl Repository {
                 updated_at = CURRENT_TIMESTAMP
             "#,
         )
-        .bind(&series.id)
-        .bind(&series.name)
+        .bind(&id)
+        .bind(name)
         .bind(&series.logo)
         .execute(&self.pool)
         .await?;
@@ -66,8 +73,15 @@ impl Repository {
         Ok(())
     }
 
-    pub async fn upsert_set(&self, set: &SetWithLang) -> Result<()> {
-        let total_cards = set.card_count.total;
+    pub async fn upsert_set(&self, set: &SetData, lang: &str) -> Result<()> {
+        let id = format!("{}-{}", lang, set.id);
+        let serie_id = format!("{}-{}", lang, set.serie_id);
+        let name = match lang {
+            "en" => set.name_en.as_deref().unwrap_or(""),
+            "ja" => set.name_ja.as_deref().unwrap_or(""),
+            _ => "",
+        };
+        let release_date = set.release_date.as_deref().unwrap_or("");
 
         sqlx::query(
             r#"
@@ -84,14 +98,14 @@ impl Repository {
                 updated_at = CURRENT_TIMESTAMP
             "#,
         )
-        .bind(&set.id)
-        .bind(&set.name)
-        .bind(&set.logo)
-        .bind(&set.symbol)
-        .bind(&set.serie_id)
-        .bind(&set.release_date)
+        .bind(&id)
+        .bind(name)
+        .bind(&None::<String>) // logo
+        .bind(&None::<String>) // symbol
+        .bind(&serie_id)
+        .bind(release_date)
         .bind(&set.tcg_online)
-        .bind(total_cards)
+        .bind(set.total_cards)
         .execute(&self.pool)
         .await?;
 
@@ -136,17 +150,13 @@ impl Repository {
         Ok(result.map(|r| r.0 != 0).unwrap_or(false))
     }
 
-    pub async fn upsert_card(&self, card: &CardDetailsWithLang) -> Result<()> {
-        let types_json = card
-            .types
-            .as_ref()
-            .map(|t| serde_json::to_string(t).ok())
-            .flatten();
-        let dex_id = card.dex_ids.as_ref().and_then(|ids| ids.first().copied());
-        let category = card
-            .category
-            .clone()
-            .unwrap_or_else(|| "Unknown".to_string());
+    pub async fn upsert_card(&self, card: &CardData, set_id: &str, lang: &str) -> Result<()> {
+        let id = format!("{}-{}-{}", lang, set_id, card.local_id);
+        let full_set_id = format!("{}-{}", lang, set_id);
+
+        let types_json = card.types.as_ref();
+
+        let category = card.category.clone();
 
         sqlx::query(
             r#"
@@ -169,14 +179,14 @@ impl Repository {
                 updated_at = CURRENT_TIMESTAMP
             "#,
         )
-        .bind(&card.id)
-        .bind(&card.set_id)
+        .bind(&id)
+        .bind(&full_set_id)
         .bind(&card.local_id)
         .bind(&card.name)
         .bind(&category)
         .bind(card.hp)
-        .bind(&types_json)
-        .bind(dex_id)
+        .bind(types_json)
+        .bind(card.dex_id)
         .bind(&card.rarity)
         .bind(&card.image)
         .bind(&card.stage)
@@ -213,45 +223,68 @@ impl Repository {
     }
 
     pub async fn get_existing_dex_ids(&self, dex_ids: &[i32]) -> Result<HashSet<i32>> {
-        if dex_ids.is_empty() {
-            return Ok(HashSet::new());
+        let mut result = HashSet::new();
+        for chunk in dex_ids.chunks(500) {
+            let placeholders = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+            let query = format!(
+                "SELECT DISTINCT dex_id FROM cards WHERE dex_id IN ({})",
+                placeholders
+            );
+            let mut q = sqlx::query_as::<_, (i32,)>(&query);
+            for &id in chunk {
+                q = q.bind(id);
+            }
+            let rows = q.fetch_all(&self.pool).await?;
+            for row in rows {
+                result.insert(row.0);
+            }
         }
+        Ok(result)
+    }
 
-        let placeholders: Vec<String> = dex_ids.iter().map(|_| "?".to_string()).collect();
-        let query = format!(
-            "SELECT DISTINCT dex_id FROM cards WHERE dex_id IS NOT NULL AND dex_id IN ({})",
-            placeholders.join(", ")
-        );
+    pub async fn get_pokemon_sets(&self, dex_id: i32) -> Result<Vec<CardSetInfo>> {
+        let cards = sqlx::query_as::<_, CardSetInfo>(
+            r#"
+            SELECT
+                cards.id as card_id,
+                cards.set_id,
+                sets.name as set_name,
+                cards.local_id,
+                cards.rarity,
+                cards.dex_id
+            FROM cards
+            INNER JOIN sets ON cards.set_id = sets.id
+            WHERE cards.dex_id = ?
+            ORDER BY sets.release_date
+            "#,
+        )
+        .bind(dex_id)
+        .fetch_all(&self.pool)
+        .await?;
 
-        let mut query_builder = sqlx::query_scalar::<_, i32>(&query);
-        for dex_id in dex_ids {
-            query_builder = query_builder.bind(dex_id);
-        }
-
-        let existing: Vec<i32> = query_builder.fetch_all(&self.pool).await?;
-        Ok(existing.into_iter().collect())
+        Ok(cards)
     }
 
     pub async fn get_missing_pokemon(&self) -> Result<Vec<i32>> {
-        let missing: Vec<i32> = sqlx::query_scalar(
+        let existing = sqlx::query_as::<_, (i32,)>(
             r#"
             SELECT DISTINCT c.dex_id
             FROM cards c
             LEFT JOIN collected_pokemon cp ON c.dex_id = cp.dex_id
-            WHERE c.dex_id IS NOT NULL AND cp.dex_id IS NULL
+            WHERE cp.dex_id IS NULL AND c.dex_id IS NOT NULL
             ORDER BY c.dex_id
             "#,
         )
         .fetch_all(&self.pool)
         .await?;
 
-        Ok(missing)
+        Ok(existing.into_iter().map(|r| r.0).collect())
     }
 
     pub async fn get_pokedex_completion(&self) -> Result<PokedexCompletion> {
         let result = sqlx::query_as::<_, (i64, i64)>(
             r#"
-            SELECT 
+            SELECT
                 COUNT(DISTINCT cp.dex_id) as collected,
                 COUNT(DISTINCT c.dex_id) as total
             FROM cards c
@@ -268,86 +301,19 @@ impl Repository {
         })
     }
 
-    #[allow(dead_code)]
-    pub async fn get_all_series(&self) -> Result<Vec<Series>> {
-        let series =
-            sqlx::query_as::<_, Series>("SELECT id, name, logo, symbol FROM series ORDER BY name")
-                .fetch_all(&self.pool)
-                .await?;
-
-        Ok(series)
-    }
-
-    #[allow(dead_code)]
-    pub async fn get_all_sets(&self) -> Result<Vec<DbSet>> {
-        let sets = sqlx::query_as::<_, DbSet>(
-            "SELECT id, name, logo, symbol, serie_id, release_date, tcg_online, total_cards, finished FROM sets ORDER BY release_date DESC",
-        )
-        .fetch_all(&self.pool)
-        .await?;
-
-        Ok(sets)
-    }
-
-    #[allow(dead_code)]
-    pub async fn get_cards_by_set(&self, set_id: &str) -> Result<Vec<Card>> {
-        let cards = sqlx::query_as::<_, Card>(
-            "SELECT id, set_id, local_id, name, category, hp, types, dex_id, rarity, image, stage, evolves_from, illustrator, description FROM cards WHERE set_id = ? ORDER BY local_id",
-        )
-        .bind(set_id)
-        .fetch_all(&self.pool)
-        .await?;
-
-        Ok(cards)
-    }
-
-    #[allow(dead_code)]
-    pub async fn get_cards_by_dex_id(&self, dex_id: i32) -> Result<Vec<Card>> {
-        let cards = sqlx::query_as::<_, Card>(
-            r#"
-            SELECT id, set_id, local_id, name, category, hp, types, dex_id, rarity, image, stage, evolves_from, illustrator, description 
-            FROM cards
-            WHERE dex_id = ?
-            ORDER BY set_id, local_id
-            "#,
-        )
-        .bind(dex_id)
-        .fetch_all(&self.pool)
-        .await?;
-
-        Ok(cards)
-    }
-
-    pub async fn get_pokemon_sets(&self, dex_id: i32) -> Result<Vec<CardSetInfo>> {
-        let cards = sqlx::query_as::<_, CardSetInfo>(
-            r#"
-            SELECT c.id as card_id, c.set_id, s.name as set_name, c.local_id, c.rarity, c.dex_id
-            FROM cards c
-            JOIN sets s ON c.set_id = s.id
-            WHERE c.dex_id = ?
-            ORDER BY s.release_date DESC, c.local_id
-            "#,
-        )
-        .bind(dex_id)
-        .fetch_all(&self.pool)
-        .await?;
-
-        Ok(cards)
-    }
-
     pub async fn get_set_missing_stats(&self) -> Result<Vec<SetMissingStats>> {
         let stats = sqlx::query_as::<_, SetMissingStats>(
             r#"
-            SELECT 
-                s.id as set_id,
-                s.name as set_name,
-                COUNT(DISTINCT c.dex_id) - COUNT(DISTINCT cp.dex_id) as missing
-            FROM sets s
-            JOIN cards c ON c.set_id = s.id AND c.dex_id IS NOT NULL
-            LEFT JOIN collected_pokemon cp ON c.dex_id = cp.dex_id
-            GROUP BY s.id
-            HAVING missing > 0
-            ORDER BY missing DESC
+            SELECT
+                cards.set_id,
+                sets.name as set_name,
+                COUNT(DISTINCT cards.dex_id) as missing
+            FROM cards
+            LEFT JOIN collected_pokemon cp ON cards.dex_id = cp.dex_id
+            INNER JOIN sets ON cards.set_id = sets.id
+            WHERE cp.dex_id IS NULL AND cards.dex_id IS NOT NULL
+            GROUP BY cards.set_id, sets.name
+            ORDER BY sets.release_date
             "#,
         )
         .fetch_all(&self.pool)
@@ -356,18 +322,16 @@ impl Repository {
         Ok(stats)
     }
 
-    pub async fn get_set_missing_pokemon_details(
-        &self,
-        set_id: &str,
-    ) -> Result<Vec<SetMissingCardInfo>> {
-        let cards: Vec<SetMissingCardInfo> = sqlx::query_as(
+    pub async fn get_set_missing_pokemon_details(&self, set_id: &str) -> Result<Vec<SetMissingCardInfo>> {
+        let cards = sqlx::query_as::<_, SetMissingCardInfo>(
             r#"
-            SELECT DISTINCT c.dex_id, t.en_name
-            FROM cards c
-            LEFT JOIN translations t ON c.dex_id = t.dex_id
-            LEFT JOIN collected_pokemon cp ON c.dex_id = cp.dex_id
-            WHERE c.set_id = ? AND c.dex_id IS NOT NULL AND cp.dex_id IS NULL
-            ORDER BY c.dex_id
+            SELECT DISTINCT
+                cards.dex_id,
+                NULL as en_name
+            FROM cards
+            LEFT JOIN collected_pokemon cp ON cards.dex_id = cp.dex_id
+            WHERE cards.set_id = ? AND cp.dex_id IS NULL AND cards.dex_id IS NOT NULL
+            ORDER BY cards.dex_id
             "#,
         )
         .bind(set_id)
@@ -377,11 +341,28 @@ impl Repository {
         Ok(cards)
     }
 
+    pub async fn get_english_pokemon_names(&self) -> Result<Vec<(i32, String)>> {
+        let names = sqlx::query_as::<_, (i32, String)>(
+            r#"
+            SELECT DISTINCT c.dex_id, c.name
+            FROM cards c
+            WHERE c.id LIKE 'en-%' AND c.dex_id IS NOT NULL
+            ORDER BY c.dex_id
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(names)
+    }
+
     pub async fn upsert_translation(&self, dex_id: i32, en_name: &str) -> Result<bool> {
         let result = sqlx::query(
             r#"
-            INSERT OR IGNORE INTO translations (dex_id, en_name)
+            INSERT INTO translations (dex_id, en_name)
             VALUES (?, ?)
+            ON CONFLICT(dex_id) DO UPDATE SET
+                en_name = excluded.en_name
             "#,
         )
         .bind(dex_id)
@@ -392,38 +373,12 @@ impl Repository {
         Ok(result.rows_affected() > 0)
     }
 
-    pub async fn get_translation(&self, dex_id: i32) -> Result<Option<String>> {
-        let result: Option<(String,)> =
-            sqlx::query_as("SELECT en_name FROM translations WHERE dex_id = ?")
-                .bind(dex_id)
-                .fetch_optional(&self.pool)
-                .await?;
-
-        Ok(result.map(|r| r.0))
-    }
-
     pub async fn get_all_translations(&self) -> Result<std::collections::HashMap<i32, String>> {
-        let translations: Vec<(i32, String)> =
-            sqlx::query_as("SELECT dex_id, en_name FROM translations")
-                .fetch_all(&self.pool)
-                .await?;
+        let rows = sqlx::query_as::<_, (i32, String)>("SELECT dex_id, en_name FROM translations")
+            .fetch_all(&self.pool)
+            .await?;
 
-        Ok(translations.into_iter().collect())
-    }
-
-    pub async fn get_english_pokemon_names(&self) -> Result<Vec<(i32, String)>> {
-        let names: Vec<(i32, String)> = sqlx::query_as(
-            r#"
-            SELECT DISTINCT dex_id, name 
-            FROM cards 
-            WHERE id LIKE 'en-%' AND dex_id IS NOT NULL
-            ORDER BY dex_id
-            "#,
-        )
-        .fetch_all(&self.pool)
-        .await?;
-
-        Ok(names)
+        Ok(rows.into_iter().collect())
     }
 
     pub async fn clear_translations(&self) -> Result<()> {
