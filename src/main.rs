@@ -45,6 +45,10 @@ enum Commands {
         sets: bool,
         #[arg(long)]
         sets_cards: bool,
+        #[arg(long, conflicts_with = "en")]
+        jp: bool,
+        #[arg(long, conflicts_with = "jp")]
+        en: bool,
     },
 }
 
@@ -195,9 +199,10 @@ async fn main() -> Result<()> {
                     }
                 }
             }
-            Commands::Stats { sets, sets_cards } => {
+            Commands::Stats { sets, sets_cards, jp, en } => {
+                let lang = if jp { Some("ja") } else if en { Some("en") } else { None };
                 if sets_cards {
-                    let stats = repo.get_set_missing_stats().await?;
+                    let stats = repo.get_set_missing_stats(lang).await?;
                     if stats.is_empty() {
                         println!("No missing Pokemon! You have them all!");
                     } else {
@@ -222,7 +227,7 @@ async fn main() -> Result<()> {
                         }
                     }
                 } else if sets {
-                    let stats = repo.get_set_missing_stats().await?;
+                    let stats = repo.get_set_missing_stats(lang).await?;
                     if stats.is_empty() {
                         println!("No missing Pokemon! You have them all!");
                     } else {

@@ -314,9 +314,8 @@ impl Repository {
         })
     }
 
-    pub async fn get_set_missing_stats(&self) -> Result<Vec<SetMissingStats>> {
-        let stats = sqlx::query_as::<_, SetMissingStats>(
-            r#"
+    pub async fn get_set_missing_stats(&self, lang: Option<&str>) -> Result<Vec<SetMissingStats>> {
+        let base_sql = r#"
             SELECT
                 cards.set_id,
                 sets.name as set_name,
@@ -325,12 +324,24 @@ impl Repository {
             LEFT JOIN collected_pokemon cp ON cards.dex_id = cp.dex_id
             INNER JOIN sets ON cards.set_id = sets.id
             WHERE cp.dex_id IS NULL AND cards.dex_id IS NOT NULL
-            GROUP BY cards.set_id, sets.name
-            ORDER BY sets.release_date
-            "#,
-        )
-        .fetch_all(&self.pool)
-        .await?;
+        "#;
+
+        let (sql, like_pattern) = match lang {
+            Some(l) => (
+                format!("{base_sql} AND cards.set_id LIKE ? GROUP BY cards.set_id, sets.name ORDER BY missing ASC"),
+                Some(format!("{l}-%")),
+            ),
+            None => (
+                format!("{base_sql} GROUP BY cards.set_id, sets.name ORDER BY missing ASC"),
+                None,
+            ),
+        };
+
+        let mut q = sqlx::query_as::<_, SetMissingStats>(&sql);
+        if let Some(pattern) = &like_pattern {
+            q = q.bind(pattern);
+        }
+        let stats = q.fetch_all(&self.pool).await?;
 
         Ok(stats)
     }
