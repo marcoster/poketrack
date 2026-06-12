@@ -2,14 +2,6 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct Series {
-    pub id: String,
-    pub name: String,
-    pub logo: Option<String>,
-    pub symbol: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct Set {
     pub id: String,
     pub name: String,
@@ -22,41 +14,6 @@ pub struct Set {
     pub finished: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct Card {
-    pub id: String,
-    pub set_id: String,
-    pub local_id: String,
-    pub name: String,
-    pub category: String,
-    pub hp: Option<i32>,
-    pub types: Option<String>,
-    pub dex_id: Option<i32>,
-    pub rarity: String,
-    pub image: Option<String>,
-    pub stage: Option<String>,
-    pub evolves_from: Option<String>,
-    pub illustrator: Option<String>,
-    pub description: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct PokemonIndex {
-    pub card_id: String,
-    pub dex_id: i32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct CollectedPokemon {
-    pub dex_id: i32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct Translation {
-    pub dex_id: i32,
-    pub en_name: String,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PokedexCompletion {
     pub collected: i64,
@@ -65,6 +22,7 @@ pub struct PokedexCompletion {
 
 #[derive(Debug, Clone, FromRow)]
 pub struct CardSetInfo {
+    #[allow(dead_code)]
     pub card_id: String,
     pub set_id: String,
     pub set_name: String,

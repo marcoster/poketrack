@@ -1,4 +1,3 @@
-mod api;
 mod db;
 mod cards_database;
 
@@ -256,73 +255,38 @@ async fn main() -> Result<()> {
 
 async fn update_tcgdex_cache(repo: &Repository, force: bool) -> Result<()> {
     let languages = vec!["en", "ja"];
-    let mode = if force {
-        "force refresh"
-    } else {
-        "incremental"
-    };
+    let mode = if force { "force refresh" } else { "incremental" };
     tracing::info!("Starting TCGdex cache update from cards-database ({} mode)...", mode);
 
     if force {
         repo.clear_cache().await?;
     }
 
-    let db = cards_database::CardsDatabase::new();
+    let db = cards_database::CardsDatabase::new()?;
     let mut total_cards_inserted: u64 = 0;
     let mut total_cards_skipped: u64 = 0;
     let mut total_sets_completed = 0u64;
 
     for lang in &languages {
-        let lang_label = if *lang == "en" {
-            "English (en)"
-        } else {
-            "Japanese (ja)"
-        };
-        tracing::info!("Loading {} sets from cards-database...", lang_label);
-
-        let series_list = match db.load_series(lang) {
-            Ok(s) => s,
-            Err(e) => {
-                tracing::error!("Failed to load series for {}: {}", lang, e);
-                continue;
-            }
-        };
+        let lang_label = if *lang == "en" { "English (en)" } else { "Japanese (ja)" };
+        let series_list = db.load_series(lang)?;
         tracing::info!("Found {} series for {}", series_list.len(), lang_label);
 
-        let mut sets_to_process: Vec<(String, String, String)> = Vec::new();
+        let mut sets_to_process: Vec<cards_database::SetData> = Vec::new();
         let mut sets_skipped = 0u64;
 
         for serie in &series_list {
-            if let Err(e) = repo.upsert_series(serie, lang).await {
-                tracing::error!("Failed to save series {}: {}", serie.id, e);
-                continue;
-            }
-
-            let sets = match db.load_sets_for_series(&serie.id, lang) {
-                Ok(s) => {
-                    tracing::info!("Found {} sets for series {}", s.len(), serie.id);
-                    s
-                },
-                Err(e) => {
-                    tracing::error!("Failed to load sets for series {}: {}", serie.id, e);
-                    continue;
-                }
-            };
+            repo.upsert_series(serie, lang).await?;
+            let sets = db.load_sets_for_series(&serie.id, lang)?;
+            tracing::info!("Found {} sets for series {}", sets.len(), serie.id);
 
             for set_data in &sets {
                 let should_fetch = if force {
                     true
                 } else {
+                    let set_info = repo.get_set_info(&set_data.id, lang).await?;
+                    let is_finished = set_info.map(|s| s.finished).unwrap_or(false);
                     let db_total = repo.count_set_cards(&set_data.id, lang).await?;
-                    let is_finished = repo.is_set_finished(&set_data.id, lang).await?;
-
-                    tracing::info!(
-                        "{} is_finished {}, total: {:?}, db_total: {}",
-                        set_data.id,
-                        is_finished,
-                        db_total,
-                        set_data.total_cards,
-                    );
 
                     if is_finished && db_total == Some(set_data.total_cards) {
                         sets_skipped += 1;
@@ -333,91 +297,45 @@ async fn update_tcgdex_cache(repo: &Repository, force: bool) -> Result<()> {
                 };
 
                 if should_fetch {
-                    let set_name = match *lang {
-                        "en" => set_data.name_en.clone().unwrap_or_default(),
-                        "ja" => set_data.name_ja.clone().unwrap_or_default(),
-                        _ => String::new(),
-                    };
-                    let series_name = match *lang {
-                        "en" => serie.name_en.clone().unwrap_or_default(),
-                        "ja" => serie.name_ja.clone().unwrap_or_default(),
-                        _ => String::new(),
-                    };
-                    sets_to_process.push((
-                        set_data.id.clone(),
-                        set_name,
-                        series_name,
-                    ));
+                    sets_to_process.push(set_data.clone());
                 }
             }
         }
 
         tracing::info!("{} sets already complete, skipping", sets_skipped);
-        tracing::info!(
-            "Processing {} new/updated sets for {}...",
-            sets_to_process.len(),
-            lang_label
-        );
+        tracing::info!("Processing {} new/updated sets for {}...", sets_to_process.len(), lang_label);
 
         let mut cards_inserted: u64 = 0;
-        let mut cards_skipped: u64 = 0;
+        let cards_skipped: u64 = 0;
         let mut sets_completed = 0u64;
 
-        for (set_idx, (set_id, set_name, series_name)) in sets_to_process.iter().enumerate() {
+        for (set_idx, set_data) in sets_to_process.iter().enumerate() {
+            let set_name = match *lang {
+                "en" => set_data.name_en.as_deref().unwrap_or(""),
+                "ja" => set_data.name_ja.as_deref().unwrap_or(""),
+                _ => "",
+            };
+            let series_name = series_list.iter()
+                .find(|s| s.id == set_data.serie_id)
+                .and_then(|s| match *lang {
+                    "en" => s.name_en.as_deref(),
+                    "ja" => s.name_ja.as_deref(),
+                    _ => None,
+                })
+                .unwrap_or("");
+
             tracing::info!(
                 "[{}] Processing set {}/{}: {} ({})",
-                lang,
-                set_idx + 1,
-                sets_to_process.len(),
-                set_name,
-                series_name
+                lang, set_idx + 1, sets_to_process.len(), set_name, series_name
             );
 
-            // Load set data
-            let set_data = match db.load_sets_for_series(&series_name, lang) {
-                Ok(sets) => sets.into_iter().find(|s| s.id == *set_id),
-                Err(e) => {
-                    tracing::error!("Failed to load set {}: {}", set_id, e);
-                    continue;
-                }
-            };
+            let cards = db.load_cards(&set_data.id, lang)?;
+            tracing::info!("Loading {} cards for set {}...", cards.len(), set_data.id);
 
-            let set_data = match set_data {
-                Some(s) => s,
-                None => {
-                    tracing::error!("Set {} not found", set_id);
-                    continue;
-                }
-            };
-
-            if let Err(e) = repo.upsert_set(&set_data, lang).await {
-                tracing::error!("Failed to save set {}: {}", set_id, e);
-                continue;
-            }
-
-            // Load cards for this set
-            let cards = match db.load_cards(&set_id, lang) {
-                Ok(c) => c,
-                Err(e) => {
-                    tracing::error!("Failed to load cards for set {}: {}", set_id, e);
-                    continue;
-                }
-            };
-
-            tracing::info!("Loading {} cards for set {}...", cards.len(), set_id);
-
-            for card_data in &cards {
-                if let Err(e) = repo.upsert_card(card_data, &set_id, lang).await {
-                    tracing::warn!("Failed to save card {}: {}", card_data.local_id, e);
-                    cards_skipped += 1;
-                } else {
-                    cards_inserted += 1;
-                }
-            }
-
-            repo.mark_set_finished(&set_id, lang).await?;
+            repo.upsert_set_with_cards(set_data, &cards, lang).await?;
+            cards_inserted += cards.len() as u64;
             sets_completed += 1;
-            tracing::debug!("Set {} marked as finished", set_id);
+            tracing::debug!("Set {} marked as finished", set_data.id);
         }
 
         total_cards_inserted += cards_inserted;
@@ -430,9 +348,7 @@ async fn update_tcgdex_cache(repo: &Repository, force: bool) -> Result<()> {
 
     tracing::info!(
         "TCGdex cache update complete! Sets completed: {}, Cards inserted: {}, Cards skipped: {}",
-        total_sets_completed,
-        total_cards_inserted,
-        total_cards_skipped
+        total_sets_completed, total_cards_inserted, total_cards_skipped
     );
     Ok(())
 }

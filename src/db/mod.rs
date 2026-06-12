@@ -42,6 +42,12 @@ pub async fn initialize_database(pool: &SqlitePool) -> Result<()> {
         .execute(pool)
         .await?;
 
+    for (name, sql) in schema::CREATE_INDEXES {
+        if let Err(e) = sqlx::query(sql).execute(pool).await {
+            tracing::warn!("Failed to create index {}: {}", name, e);
+        }
+    }
+
     tracing::info!("Database schema initialized successfully");
     Ok(())
 }

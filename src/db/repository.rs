@@ -3,7 +3,7 @@ use sqlx::SqlitePool;
 use std::collections::HashSet;
 
 use super::models::{
-    Card, CardSetInfo, PokedexCompletion, Series, Set as DbSet, SetMissingCardInfo, SetMissingStats,
+    CardSetInfo, PokedexCompletion, Set as DbSet, SetMissingCardInfo, SetMissingStats,
 };
 use crate::cards_database::{CardData, SerieData, SetData};
 
@@ -34,6 +34,7 @@ impl Repository {
     }
 
     pub async fn clear_cache(&self) -> Result<()> {
+        sqlx::query("BEGIN").execute(&self.pool).await?;
         sqlx::query("DELETE FROM pokemon_index")
             .execute(&self.pool)
             .await?;
@@ -42,6 +43,7 @@ impl Repository {
         sqlx::query("DELETE FROM series")
             .execute(&self.pool)
             .await?;
+        sqlx::query("COMMIT").execute(&self.pool).await?;
         tracing::info!("Cache cleared successfully");
         Ok(())
     }
@@ -121,16 +123,6 @@ impl Repository {
         Ok(())
     }
 
-    pub async fn get_set_total_cards(&self, set_id: &str, lang: &str) -> Result<Option<i32>> {
-        let full_id = format!("{}-{}", lang, set_id);
-        let result: Option<(i32,)> = sqlx::query_as("SELECT total_cards FROM sets WHERE id = ?")
-            .bind(&full_id)
-            .fetch_optional(&self.pool)
-            .await?;
-
-        Ok(result.map(|r| r.0))
-    }
-
     pub async fn count_set_cards(&self, set_id: &str, lang: &str) -> Result<Option<i32>> {
         let full_id = format!("{}-{}", lang, set_id);
         let result: Option<(i32,)> = sqlx::query_as("SELECT COUNT(*) from cards where set_id == ?")
@@ -140,14 +132,35 @@ impl Repository {
         Ok(result.map(|r| r.0))
     }
 
-    pub async fn is_set_finished(&self, set_id: &str, lang: &str) -> Result<bool> {
+    pub async fn get_set_info(&self, set_id: &str, lang: &str) -> Result<Option<DbSet>> {
         let full_id = format!("{}-{}", lang, set_id);
-        let result: Option<(i64,)> = sqlx::query_as("SELECT finished FROM sets WHERE id = ?")
-            .bind(&full_id)
-            .fetch_optional(&self.pool)
-            .await?;
+        let result = sqlx::query_as::<_, DbSet>(
+            "SELECT * FROM sets WHERE id = ?"
+        )
+        .bind(&full_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(result)
+    }
 
-        Ok(result.map(|r| r.0 != 0).unwrap_or(false))
+    pub async fn upsert_set_with_cards(
+        &self,
+        set: &SetData,
+        cards: &[CardData],
+        lang: &str,
+    ) -> Result<()> {
+        sqlx::query("BEGIN").execute(&self.pool).await?;
+
+        self.upsert_set(set, lang).await?;
+
+        for card in cards {
+            self.upsert_card(card, &set.id, lang).await?;
+        }
+
+        self.mark_set_finished(&set.id, lang).await?;
+
+        sqlx::query("COMMIT").execute(&self.pool).await?;
+        Ok(())
     }
 
     pub async fn upsert_card(&self, card: &CardData, set_id: &str, lang: &str) -> Result<()> {
@@ -344,9 +357,10 @@ impl Repository {
     pub async fn get_english_pokemon_names(&self) -> Result<Vec<(i32, String)>> {
         let names = sqlx::query_as::<_, (i32, String)>(
             r#"
-            SELECT DISTINCT c.dex_id, c.name
+            SELECT c.dex_id, c.name
             FROM cards c
             WHERE c.id LIKE 'en-%' AND c.dex_id IS NOT NULL
+            GROUP BY c.dex_id
             ORDER BY c.dex_id
             "#,
         )

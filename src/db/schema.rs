@@ -71,7 +71,6 @@ CREATE TABLE IF NOT EXISTS translations (
 )
 "#;
 
-#[allow(dead_code)]
 pub const CREATE_INDEXES: &[(&str, &str)] = &[
     (
         "idx_cards_set_id",
@@ -80,6 +79,10 @@ pub const CREATE_INDEXES: &[(&str, &str)] = &[
     (
         "idx_cards_name",
         "CREATE INDEX IF NOT EXISTS idx_cards_name ON cards(name)",
+    ),
+    (
+        "idx_cards_dex_id",
+        "CREATE INDEX IF NOT EXISTS idx_cards_dex_id ON cards(dex_id)",
     ),
     (
         "idx_pokemon_index_dex_id",
