@@ -20,7 +20,10 @@ impl GuiRepository {
     pub fn get_all_cards(&self) -> Result<Vec<(String, String, Option<i32>)>> {
         self.runtime.block_on(async {
             let rows = sqlx::query_as::<_, (String, String, Option<i32>)>(
-                "SELECT id, name, dex_id FROM cards ORDER BY dex_id",
+                "SELECT id, name, dex_id FROM cards \
+                 WHERE dex_id IS NOT NULL \
+                 GROUP BY dex_id \
+                 ORDER BY dex_id",
             )
             .fetch_all(&self.pool)
             .await?;
@@ -193,6 +196,24 @@ impl GuiRepository {
             .fetch_optional(&self.pool)
             .await?;
             Ok(result)
+        })
+    }
+
+    pub fn get_cards_for_set(&self, set_id: &str) -> Result<Vec<(String, i32, bool)>> {
+        self.runtime.block_on(async {
+            let rows = sqlx::query_as::<_, (String, i32, Option<i32>)>(
+                r#"
+                SELECT DISTINCT c.name, c.dex_id, cp.dex_id
+                FROM cards c
+                LEFT JOIN collected_pokemon cp ON c.dex_id = cp.dex_id
+                WHERE c.set_id = ? AND c.dex_id IS NOT NULL
+                ORDER BY c.dex_id
+                "#,
+            )
+            .bind(set_id)
+            .fetch_all(&self.pool)
+            .await?;
+            Ok(rows.into_iter().map(|(name, dex, cp)| (name, dex, cp.is_some())).collect())
         })
     }
 

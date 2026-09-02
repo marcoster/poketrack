@@ -24,4 +24,8 @@ pub struct AppState {
     pub sort_direction: String,
     pub collected_count: i64,
     pub total_count: i64,
+    pub status: String,
+    pub selected_set: Option<String>,
+    pub selected_set_name: String,
+    pub set_cards: Vec<CardModel>,
 }

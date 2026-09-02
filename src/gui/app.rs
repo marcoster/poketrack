@@ -19,6 +19,10 @@ impl App {
                 sort_direction: "asc".to_string(),
                 collected_count: 0,
                 total_count: 0,
+                status: "Ready".to_string(),
+                selected_set: None,
+                selected_set_name: String::new(),
+                set_cards: Vec::new(),
             },
         };
         app.load_initial_data();
@@ -147,5 +151,63 @@ impl App {
         }
         self.update_completion();
         Ok(())
+    }
+
+    pub fn get_cards(&self) -> &[CardModel] {
+        &self.state.cards
+    }
+
+    pub fn get_sets(&self) -> &[SetModel] {
+        &self.state.sets
+    }
+
+    pub fn get_status(&self) -> &str {
+        &self.state.status
+    }
+
+    pub fn set_status(&mut self, status: &str) {
+        self.state.status = status.to_string();
+    }
+
+    pub fn reload(&mut self) {
+        self.load_cards();
+        self.load_sets();
+        self.update_completion();
+    }
+
+    pub fn select_set(&mut self, set_id: &str) {
+        self.state.selected_set = Some(set_id.to_string());
+        self.state.selected_set_name = self.state.sets.iter()
+            .find(|s| s.id == set_id)
+            .map(|s| s.name.clone())
+            .unwrap_or_default();
+        self.state.set_cards = self.repository
+            .get_cards_for_set(set_id)
+            .map(|cards| cards.into_iter().map(|(name, dex_id, collected)| CardModel {
+                dex_id,
+                name,
+                is_collected: collected,
+            }).collect())
+            .unwrap_or_default();
+    }
+
+    pub fn clear_selected_set(&mut self) {
+        self.state.selected_set = None;
+        self.state.selected_set_name.clear();
+        self.state.set_cards.clear();
+    }
+
+    pub fn get_selected_set_cards(&self) -> &[CardModel] {
+        &self.state.set_cards
+    }
+
+    pub fn get_selected_set_name(&self) -> &str {
+        &self.state.selected_set_name
+    }
+
+    pub fn refresh_set_cards(&mut self) {
+        if let Some(set_id) = self.state.selected_set.clone() {
+            self.select_set(&set_id);
+        }
     }
 }
