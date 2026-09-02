@@ -1,0 +1,270 @@
+import { Button, CheckBox, ComboBox, ProgressIndicator, ScrollView, ListView } from "std-widgets.slint";
+
+// Poketrack GUI - main application window
+
+export struct CardItem {
+    dex_id: int,
+    name: string,
+    collected: bool,
+}
+
+export struct SetItem {
+    set_id: string,
+    name: string,
+    language: string,
+    release_date: string,
+    missing_count: int,
+}
+
+export component AppWindow inherits Window {
+    title: "Poketrack";
+    width: 900px;
+    height: 640px;
+
+    in property <[CardItem]> cards-model;
+    in property <[CardItem]> set-cards-model;
+    in property <[SetItem]> sets-model;
+    property <bool> show-cards-view: true;
+    in property <string> selected-set-name: "";
+    in property <string> status-text: "Ready";
+    in property <float> progress: 0;
+
+    callback toggle-collected(dex_id: int);
+    callback collect-set(set_id: string);
+    callback update-database();
+    callback select-set(set_id: string);
+    callback clear-selected-set();
+    callback set-filter(filter: string);
+    callback set-sort(sort_by: string, direction: string);
+
+    // ---- Top bar ----
+    Rectangle {
+        height: 48px;
+        width: 100%;
+        background: #2b2d42;
+        HorizontalLayout {
+            padding: 8px;
+            spacing: 8px;
+
+            Text {
+                text: "Poketrack";
+                font-size: 20px;
+                font-weight: 700;
+                color: white;
+                vertical-alignment: center;
+            }
+
+            ProgressIndicator {
+                width: 160px;
+                progress: root.progress;
+            }
+
+            Text {
+                text: root.status-text;
+                color: #e0e0e0;
+                font-size: 14px;
+                vertical-alignment: center;
+            }
+
+            Button {
+                text: "Update Database";
+                clicked => { root.update-database(); }
+            }
+        }
+    }
+
+    // ---- Content ----
+    HorizontalLayout {
+        // ---- Left nav ----
+        Rectangle {
+            width: 160px;
+            background: #edf2f4;
+            VerticalLayout {
+                padding: 8px;
+                spacing: 8px;
+
+                Button {
+                    text: "Cards";
+                    clicked => { root.show-cards-view = true; root.clear-selected-set(); }
+                }
+                Button {
+                    text: "Sets";
+                    clicked => { root.show-cards-view = false; root.clear-selected-set(); }
+                }
+            }
+        }
+
+        // ---- Main panel ----
+        Rectangle {
+            background: white;
+
+            VerticalLayout {
+                padding: 12px;
+                spacing: 8px;
+
+                // Cards view
+                if root.show-cards-view : VerticalLayout {
+                    HorizontalLayout {
+                        spacing: 8px;
+                        ComboBox {
+                            width: 130px;
+                            model: ["All", "Collected", "Missing"];
+                            selected(value) => {
+                                if value == "All" { root.set-filter("all"); }
+                                else if value == "Collected" { root.set-filter("collected"); }
+                                else if value == "Missing" { root.set-filter("missing"); }
+                            }
+                        }
+                        ComboBox {
+                            width: 130px;
+                            model: ["Number", "Name"];
+                            selected(value) => {
+                                if value == "Name" { root.set-sort("name", "asc"); }
+                                else { root.set-sort("number", "asc"); }
+                            }
+                        }
+                    }
+
+                    ScrollView {
+                        ListView {
+                            for card in root.cards-model : HorizontalLayout {
+                                width: 100%;
+                                spacing: 8px;
+                                padding: 4px;
+
+                                CheckBox {
+                                    checked: card.collected;
+                                    toggled => {
+                                        root.toggle-collected(card.dex_id);
+                                    }
+                                }
+
+                                Text {
+                                    text: "#" + card.dex_id;
+                                    font-size: 14px;
+                                    color: #1a1a1a;
+                                    width: 56px;
+                                }
+
+                                Text {
+                                    text: card.name;
+                                    font-size: 14px;
+                                    color: #1a1a1a;
+                                    horizontal-stretch: 1;
+                                }
+                            }
+                        }
+                    }
+
+                    Text {
+                        text: "Showing " + root.cards-model.length + " cards";
+                        font-size: 12px;
+                        color: gray;
+                    }
+                }
+
+                // Sets view
+                if !root.show-cards-view && root.selected-set-name == "" : VerticalLayout {
+                    ScrollView {
+                        ListView {
+                            for set in root.sets-model : HorizontalLayout {
+                                width: 100%;
+                                spacing: 8px;
+                                padding: 4px;
+
+                                Button {
+                                    text: "Details";
+                                    clicked => { root.select-set(set.set_id); }
+                                }
+
+                                Text {
+                                    text: set.name;
+                                    font-size: 14px;
+                                    color: #1a1a1a;
+                                    horizontal-stretch: 1;
+                                }
+
+                                Text {
+                                    text: set.language;
+                                    font-size: 12px;
+                                    color: gray;
+                                    width: 70px;
+                                }
+
+                                Text {
+                                    text: set.release_date;
+                                    font-size: 12px;
+                                    color: gray;
+                                    width: 80px;
+                                }
+
+                                Text {
+                                    text: set.missing_count + " missing";
+                                    font-size: 12px;
+                                    width: 80px;
+                                }
+
+                                Button {
+                                    text: "Add missing";
+                                    enabled: set.missing_count > 0;
+                                    clicked => { root.collect-set(set.set_id); }
+                                }
+                            }
+                        }
+                    }
+                    Text {
+                        text: "Showing " + root.sets-model.length + " sets";
+                        font-size: 12px;
+                        color: gray;
+                    }
+                }
+
+                // Set details view
+                if !root.show-cards-view && root.selected-set-name != "" : VerticalLayout {
+                    HorizontalLayout {
+                        Button {
+                            text: "<- Back";
+                            clicked => { root.clear-selected-set(); }
+                        }
+                        Text {
+                            text: root.selected-set-name;
+                            font-size: 18px;
+                            font-weight: 700;
+                            color: #1a1a1a;
+                        }
+                    }
+                    ScrollView {
+                        ListView {
+                            for card in root.set-cards-model : HorizontalLayout {
+                                width: 100%;
+                                spacing: 8px;
+                                padding: 4px;
+
+                                CheckBox {
+                                    checked: card.collected;
+                                    toggled => {
+                                        root.toggle-collected(card.dex_id);
+                                    }
+                                }
+
+                                Text {
+                                    text: "#" + card.dex_id;
+                                    font-size: 14px;
+                                    color: #1a1a1a;
+                                    width: 56px;
+                                }
+
+                                Text {
+                                    text: card.name;
+                                    font-size: 14px;
+                                    color: #1a1a1a;
+                                    horizontal-stretch: 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
