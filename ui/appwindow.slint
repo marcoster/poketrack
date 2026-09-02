@@ -38,6 +38,7 @@ export component AppWindow inherits Window {
     callback clear-selected-set();
     callback set-filter(filter: string);
     callback set-sort(sort_by: string, direction: string);
+    callback set-sets-sort(sort_by: string, direction: string);
 
     // Select the color scheme for the std-widgets (buttons, combo boxes, etc.).
     // Rewrite this line by hand to switch between a light or dark UI.
@@ -167,6 +168,18 @@ export component AppWindow inherits Window {
 
                 // Sets view
                 if !root.show-cards-view && root.selected-set-name == "" : VerticalLayout {
+                    HorizontalLayout {
+                        spacing: 8px;
+                        ComboBox {
+                            width: 130px;
+                            model: ["Language", "Set id", "Missing"];
+                            selected(value) => {
+                                if value == "Set id" { root.set-sets-sort("id", "asc"); }
+                                else if value == "Missing" { root.set-sets-sort("missing", "asc"); }
+                                else { root.set-sets-sort("language", "asc"); }
+                            }
+                        }
+                    }
                     ScrollView {
                         ListView {
                             for set in root.sets-model : HorizontalLayout {

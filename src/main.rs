@@ -133,6 +133,20 @@ fn main() -> anyhow::Result<()> {
         }
     });
 
+    ui.on_set_sets_sort({
+        let ui_weak = ui_weak.clone();
+        let app_rc = app_rc.clone();
+        move |sort_by, direction| {
+            let ui = ui_weak.unwrap();
+            {
+                let mut app = app_rc.borrow_mut();
+                app.sort_sets(sort_by.as_str(), direction.as_str());
+            }
+            let app = app_rc.borrow();
+            refresh_sets(&ui, &app);
+        }
+    });
+
     // Holder keeps the current Timer alive while an update is in progress.
     let timer_holder: Rc<RefCell<Option<Rc<RefCell<Option<slint::Timer>>>>>> =
         Rc::new(RefCell::new(None));

@@ -161,6 +161,18 @@ impl App {
         &self.state.sets
     }
 
+    pub fn sort_sets(&mut self, sort_by: &str, direction: &str) {
+        let ascending = direction != "desc";
+        self.state.sets.sort_by(|a, b| {
+            let ord = match sort_by {
+                "id" => a.id.cmp(&b.id),
+                "missing" => a.missing_count.cmp(&b.missing_count),
+                _ => a.language.cmp(&b.language),
+            };
+            if ascending { ord } else { ord.reverse() }
+        });
+    }
+
     pub fn get_status(&self) -> &str {
         &self.state.status
     }
