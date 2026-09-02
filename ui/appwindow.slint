@@ -28,6 +28,8 @@ export component AppWindow inherits Window {
     in property <string> selected-set-name: "";
     in property <string> status-text: "Ready";
     in property <float> progress: 0;
+    in property <int> collected-count: 0;
+    in property <int> total-count: 0;
 
     callback toggle-collected(dex_id: int);
     callback collect-set(set_id: string);
@@ -157,7 +159,7 @@ export component AppWindow inherits Window {
                     }
 
                     Text {
-                        text: "Showing " + root.cards-model.length + " cards";
+                        text: root.collected-count + " of " + root.total-count + " cards (" + (root.total-count - root.collected-count) + " missing)";
                         font-size: 12px;
                         color: gray;
                     }

@@ -315,4 +315,6 @@ fn refresh_progress(ui: &AppWindow, app: &App) {
         0.0
     };
     ui.set_progress(pct);
+    ui.set_collected_count(state.collected_count as i32);
+    ui.set_total_count(state.total_count as i32);
 }
