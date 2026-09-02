@@ -1,4 +1,4 @@
-import { Button, CheckBox, ComboBox, ProgressIndicator, ScrollView, ListView } from "std-widgets.slint";
+import { Button, CheckBox, ComboBox, ProgressIndicator, ScrollView, ListView, Palette } from "std-widgets.slint";
 
 // Poketrack GUI - main application window
 
@@ -36,6 +36,12 @@ export component AppWindow inherits Window {
     callback clear-selected-set();
     callback set-filter(filter: string);
     callback set-sort(sort_by: string, direction: string);
+
+    // Force the light color scheme (light background / dark text) for the std-widgets
+    // so they match the application's light backgrounds.
+    public function set_light_theme() {
+        Palette.color-scheme = ColorScheme.dark;
+    }
 
     // ---- Top bar ----
     Rectangle {
