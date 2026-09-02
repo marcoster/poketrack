@@ -1,5 +1,6 @@
 use anyhow::Result;
 use sqlx::SqlitePool;
+use std::collections::HashMap;
 use tokio::runtime::Runtime;
 
 use crate::db::models::{CardSetInfo, PokedexCompletion, SetMissingCardInfo, SetMissingStats, Set};
@@ -201,9 +202,21 @@ impl GuiRepository {
 
     pub fn get_cards_for_set(&self, set_id: &str) -> Result<Vec<(String, i32, bool)>> {
         self.runtime.block_on(async {
-            let rows = sqlx::query_as::<_, (String, i32, Option<i32>)>(
+            // Names as shown in the Cards view: one default entry per dex id.
+            // Match by dex id so the set details show the same names.
+            let names = sqlx::query_as::<_, (i32, String)>(
+                "SELECT dex_id, name FROM cards \
+                 WHERE dex_id IS NOT NULL \
+                 GROUP BY dex_id \
+                 ORDER BY dex_id",
+            )
+            .fetch_all(&self.pool)
+            .await?;
+            let name_by_dex: HashMap<i32, String> = names.into_iter().collect();
+
+            let rows = sqlx::query_as::<_, (i32, Option<i32>)>(
                 r#"
-                SELECT DISTINCT c.name, c.dex_id, cp.dex_id
+                SELECT DISTINCT c.dex_id, cp.dex_id
                 FROM cards c
                 LEFT JOIN collected_pokemon cp ON c.dex_id = cp.dex_id
                 WHERE c.set_id = ? AND c.dex_id IS NOT NULL
@@ -213,7 +226,14 @@ impl GuiRepository {
             .bind(set_id)
             .fetch_all(&self.pool)
             .await?;
-            Ok(rows.into_iter().map(|(name, dex, cp)| (name, dex, cp.is_some())).collect())
+
+            Ok(rows
+                .into_iter()
+                .map(|(dex, cp)| {
+                    let name = name_by_dex.get(&dex).cloned().unwrap_or_default();
+                    (name, dex, cp.is_some())
+                })
+                .collect())
         })
     }
 
