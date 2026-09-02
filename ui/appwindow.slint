@@ -37,9 +37,12 @@ export component AppWindow inherits Window {
     callback set-filter(filter: string);
     callback set-sort(sort_by: string, direction: string);
 
-    // Force the light color scheme (light background / dark text) for the std-widgets
-    // so they match the application's light backgrounds.
-    public function set_light_theme() {
+    // Select the color scheme for the std-widgets (buttons, combo boxes, etc.).
+    // Rewrite this line by hand to switch between a light or dark UI.
+    //   ColorScheme.light -> dark UI (dark background, light text)
+    //   ColorScheme.dark  -> light UI (light background, dark text)
+    // The rest of the UI uses the Palette colors below, so it adapts automatically.
+    public function set_theme() {
         Palette.color-scheme = ColorScheme.light;
     }
 
@@ -84,7 +87,7 @@ export component AppWindow inherits Window {
         // ---- Left nav ----
         Rectangle {
             width: 160px;
-            background: #edf2f4;
+            background: Palette.background;
             VerticalLayout {
                 padding: 8px;
                 spacing: 8px;
@@ -102,7 +105,7 @@ export component AppWindow inherits Window {
 
         // ---- Main panel ----
         Rectangle {
-            background: white;
+            background: Palette.control-background;
 
             VerticalLayout {
                 padding: 12px;
@@ -148,14 +151,14 @@ export component AppWindow inherits Window {
                                 Text {
                                     text: "#" + card.dex_id;
                                     font-size: 14px;
-                                    color: #1a1a1a;
+                                    color: Palette.foreground;
                                     width: 56px;
                                 }
 
                                 Text {
                                     text: card.name;
                                     font-size: 14px;
-                                    color: #1a1a1a;
+                                    color: Palette.foreground;
                                     horizontal-stretch: 1;
                                 }
                             }
@@ -186,7 +189,7 @@ export component AppWindow inherits Window {
                                 Text {
                                     text: set.name;
                                     font-size: 14px;
-                                    color: #1a1a1a;
+                                    color: Palette.foreground;
                                     horizontal-stretch: 1;
                                 }
 
@@ -236,7 +239,7 @@ export component AppWindow inherits Window {
                             text: root.selected-set-name;
                             font-size: 18px;
                             font-weight: 700;
-                            color: #1a1a1a;
+                            color: Palette.foreground;
                         }
                     }
                     ScrollView {
@@ -256,14 +259,14 @@ export component AppWindow inherits Window {
                                 Text {
                                     text: "#" + card.dex_id;
                                     font-size: 14px;
-                                    color: #1a1a1a;
+                                    color: Palette.foreground;
                                     width: 56px;
                                 }
 
                                 Text {
                                     text: card.name;
                                     font-size: 14px;
-                                    color: #1a1a1a;
+                                    color: Palette.foreground;
                                     horizontal-stretch: 1;
                                 }
                             }

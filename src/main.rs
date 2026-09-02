@@ -36,7 +36,7 @@ fn main() -> anyhow::Result<()> {
     let app = Rc::new(RefCell::new(App::new(repo)));
 
     let ui = AppWindow::new()?;
-    ui.invoke_set_light_theme();
+    ui.invoke_set_theme();
 
     refresh_cards(&ui, &app.borrow());
     refresh_sets(&ui, &app.borrow());
