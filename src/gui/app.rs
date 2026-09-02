@@ -1,5 +1,4 @@
-use slint::Model;
-use crate::gui::models::{CardModel, SetModel, SetDetailModel, AppState};
+use crate::gui::models::{CardModel, SetModel, AppState};
 use crate::gui::db::GuiRepository;
 
 pub struct App {
@@ -15,11 +14,11 @@ impl App {
                 current_view: "cards".to_string(),
                 cards: Vec::new(),
                 sets: Vec::new(),
-                set_details: None,
                 filter: "all".to_string(),
                 sort_by: "number".to_string(),
                 sort_direction: "asc".to_string(),
-                completion: PokedexCompletion { collected: 0, total: 0 },
+                collected_count: 0,
+                total_count: 0,
             },
         };
         app.load_initial_data();
@@ -35,15 +34,13 @@ impl App {
     fn load_cards(&mut self) {
         if let Ok(cards) = self.repository.get_all_cards() {
             let missing_pokemon = self.repository.get_missing_pokemon().unwrap_or_default();
-            self.state.cards = cards.into_iter().map(|card| {
-                let dex_id = card.dex_id.unwrap_or(0);
-                let is_collected = !missing_pokemon.contains(&dex_id);
-                let sets = self.repository.get_pokemon_sets(dex_id).unwrap_or_default();
+            self.state.cards = cards.into_iter().map(|(_id, name, dex_id)| {
+                let dex = dex_id.unwrap_or(0);
+                let is_collected = !missing_pokemon.contains(&dex);
                 CardModel {
-                    dex_id,
-                    name: card.name,
+                    dex_id: dex,
+                    name,
                     is_collected,
-                    sets,
                 }
             }).collect();
         }
@@ -51,9 +48,9 @@ impl App {
 
     fn load_sets(&mut self) {
         if let Ok(sets) = self.repository.get_all_sets() {
+            let missing_stats = self.repository.get_set_missing_stats(None).unwrap_or_default();
             self.state.sets = sets.into_iter().map(|set| {
-                let missing_count = self.repository.get_set_missing_stats(None)
-                    .unwrap_or_default()
+                let missing_count = missing_stats
                     .iter()
                     .find(|s| s.set_id == set.id)
                     .map(|s| s.missing)
@@ -62,7 +59,7 @@ impl App {
                 SetModel {
                     id: set.id,
                     name: set.name,
-                    release_date: set.release_date.unwrap_or_default(),
+                    release_date: set.release_date,
                     missing_count,
                     language: language.to_string(),
                 }
@@ -72,61 +69,48 @@ impl App {
 
     fn update_completion(&mut self) {
         if let Ok(completion) = self.repository.get_pokedex_completion() {
-            self.state.completion = completion;
+            self.state.collected_count = completion.collected;
+            self.state.total_count = completion.total;
         }
     }
 
     pub fn filter_cards(&mut self, filter: &str) {
         self.state.filter = filter.to_string();
-        self.apply_filters();
     }
 
     pub fn sort_cards(&mut self, sort_by: &str, direction: &str) {
         self.state.sort_by = sort_by.to_string();
         self.state.sort_direction = direction.to_string();
-        self.apply_sorting();
     }
 
-    fn apply_filters(&mut self) {
-        let filter = &self.state.filter;
-        let cards = &mut self.state.cards;
-        
-        match filter.as_str() {
-            "all" => {
-                // No filtering needed
+    pub fn get_filtered_cards(&self) -> Vec<&CardModel> {
+        let mut filtered: Vec<&CardModel> = self.state.cards.iter().filter(|card| {
+            match self.state.filter.as_str() {
+                "collected" => card.is_collected,
+                "missing" => !card.is_collected,
+                _ => true,
             }
-            "collected" => {
-                cards.retain(|card| card.is_collected);
-            }
-            "missing" => {
-                cards.retain(|card| !card.is_collected);
-            }
-            _ => {}
-        }
-    }
+        }).collect();
 
-    fn apply_sorting(&mut self) {
-        let sort_by = &self.state.sort_by;
-        let direction = &self.state.sort_direction;
-        let cards = &mut self.state.cards;
-        
-        match sort_by.as_str() {
+        match self.state.sort_by.as_str() {
             "number" => {
-                if direction == "asc" {
-                    cards.sort_by(|a, b| a.dex_id.cmp(&b.dex_id));
+                if self.state.sort_direction == "asc" {
+                    filtered.sort_by(|a, b| a.dex_id.cmp(&b.dex_id));
                 } else {
-                    cards.sort_by(|a, b| b.dex_id.cmp(&a.dex_id));
+                    filtered.sort_by(|a, b| b.dex_id.cmp(&a.dex_id));
                 }
             }
             "name" => {
-                if direction == "asc" {
-                    cards.sort_by(|a, b| a.name.cmp(&b.name));
+                if self.state.sort_direction == "asc" {
+                    filtered.sort_by(|a, b| a.name.cmp(&b.name));
                 } else {
-                    cards.sort_by(|a, b| b.name.cmp(&a.name));
+                    filtered.sort_by(|a, b| b.name.cmp(&a.name));
                 }
             }
             _ => {}
         }
+
+        filtered
     }
 
     pub fn get_state(&self) -> &AppState {
@@ -137,7 +121,7 @@ impl App {
         &mut self.state
     }
 
-    pub fn toggle_card_collection(&mut self, dex_id: i32) -> Result<()> {
+    pub fn toggle_card_collection(&mut self, dex_id: i32) -> anyhow::Result<()> {
         let card = self.state.cards.iter_mut().find(|c| c.dex_id == dex_id);
         if let Some(card) = card {
             card.is_collected = !card.is_collected;
@@ -153,7 +137,7 @@ impl App {
         }
     }
 
-    pub fn add_missing_cards_from_set(&mut self, set_id: &str) -> Result<()> {
+    pub fn add_missing_cards_from_set(&mut self, set_id: &str) -> anyhow::Result<()> {
         let missing_cards = self.repository.get_set_missing_pokemon_details(set_id)?;
         for card in missing_cards {
             self.repository.mark_pokemon_collected(card.dex_id)?;
@@ -162,103 +146,6 @@ impl App {
             }
         }
         self.update_completion();
-        Ok(())
-    }
-
-    pub fn update_database(&mut self, force: bool) -> Result<()> {
-        // Implementation for database update
-        let languages = vec!["en", "ja"];
-        let mode = if force { "force refresh" } else { "incremental" };
-        tracing::info!("Starting TCGdex cache update from cards-database ({} mode)...", mode);
-
-        if force {
-            // Clear cache if force update
-            // This would be implemented in the repository
-        }
-
-        let db = cards_database::CardsDatabase::new()?;
-        let mut total_cards_inserted: u64 = 0;
-        let mut total_cards_skipped: u64 = 0;
-        let mut total_sets_completed = 0u64;
-
-        for lang in &languages {
-            let lang_label = if *lang == "en" { "English (en)" } else { "Japanese (ja)" };
-            let series_list = db.load_series(lang)?;
-            tracing::info!("Found {} series for {}", series_list.len(), lang_label);
-
-            let mut sets_to_process: Vec<cards_database::SetData> = Vec::new();
-            let mut sets_skipped = 0u64;
-
-            for serie in &series_list {
-                // Upsert series
-                // This would be implemented in the repository
-                let sets = db.load_sets_for_series(&serie.id, lang)?;
-                tracing::info!("Found {} sets for series {}", sets.len(), serie.id);
-
-                for set_data in &sets {
-                    let should_fetch = if force {
-                        true
-                    } else {
-                        // Check if set is already complete
-                        // This would be implemented in the repository
-                        false
-                    };
-
-                    if should_fetch {
-                        sets_to_process.push(set_data.clone());
-                    }
-                }
-            }
-
-            tracing::info!("{} sets already complete, skipping", sets_skipped);
-            tracing::info!("Processing {} new/updated sets for {}...", sets_to_process.len(), lang_label);
-
-            let mut cards_inserted: u64 = 0;
-            let cards_skipped: u64 = 0;
-            let mut sets_completed = 0u64;
-
-            for (set_idx, set_data) in sets_to_process.iter().enumerate() {
-                let set_name = match *lang {
-                    "en" => set_data.name_en.as_deref().unwrap_or(""),
-                    "ja" => set_data.name_ja.as_deref().unwrap_or(""),
-                    _ => "",
-                };
-                let series_name = series_list.iter()
-                    .find(|s| s.id == set_data.serie_id)
-                    .and_then(|s| match *lang {
-                        "en" => s.name_en.as_deref(),
-                        "ja" => s.name_ja.as_deref(),
-                        _ => None,
-                    })
-                    .unwrap_or("");
-
-                tracing::info!(
-                    "[{}] Processing set {}/{}: {} ({})",
-                    lang, set_idx + 1, sets_to_process.len(), set_name, series_name
-                );
-
-                let cards = db.load_cards(&set_data.id, lang)?;
-                tracing::info!("Loading {} cards for set {}...", cards.len(), set_data.id);
-
-                // Upsert set with cards
-                // This would be implemented in the repository
-                cards_inserted += cards.len() as u64;
-                sets_completed += 1;
-                tracing::debug!("Set {} marked as finished", set_data.id);
-            }
-
-            total_cards_inserted += cards_inserted;
-            total_cards_skipped += cards_skipped;
-            total_sets_completed += sets_completed;
-        }
-
-        // Fetch English translations
-        // This would be implemented in the repository
-
-        tracing::info!(
-            "TCGdex cache update complete! Sets completed: {}, Cards inserted: {}, Cards skipped: {}",
-            total_sets_completed, total_cards_inserted, total_cards_skipped
-        );
         Ok(())
     }
 }
