@@ -30,6 +30,9 @@ export component AppWindow inherits Window {
     in property <float> progress: 0;
     in property <int> collected-count: 0;
     in property <int> total-count: 0;
+    // Injected from Rust on resize so the list fills the window height
+    // (Slint's root.height stays stale under Wayland/winit here).
+    in property <length> fill-height: 600px;
 
     callback toggle-collected(dex_id: int);
     callback collect-set(set_id: string);
@@ -51,6 +54,8 @@ export component AppWindow inherits Window {
 
     // ---- Top bar ----
     VerticalLayout {
+        width: 100%;
+        height: 100%;
         Rectangle {
             height: 48px;
             width: 100%;
@@ -99,16 +104,22 @@ export component AppWindow inherits Window {
         // ---- Main panel ----
         Rectangle {
             horizontal-stretch: 1;
+            vertical-stretch: 1;
+            height: max(root.fill-height - 48px, 200px);
             background: Palette.control-background;
 
             VerticalLayout {
+                width: 100%;
+                height: 100%;
                 padding: 12px;
                 spacing: 8px;
 
                 // Cards view
                 if root.show-cards-view : VerticalLayout {
                     width: 100%;
+                    height: 100%;
                     horizontal-stretch: 1;
+
                     HorizontalLayout {
                         horizontal-stretch: 1;
                         spacing: 8px;
@@ -131,11 +142,12 @@ export component AppWindow inherits Window {
                         }
                     }
 
-                    ScrollView {
-                        width: 100%;
-                        horizontal-stretch: 1;
-                        horizontal-scrollbar-policy: ScrollBarPolicy.always-off;
                         ListView {
+                            width: 100%;
+                            horizontal-stretch: 1;
+                            vertical-stretch: 1;
+
+                            horizontal-scrollbar-policy: ScrollBarPolicy.always-off;
                             for card in root.cards-model : HorizontalLayout {
                                 width: 100%;
                                 spacing: 8px;
@@ -163,7 +175,6 @@ export component AppWindow inherits Window {
                                 }
                             }
                         }
-                    }
 
                     Text {
                         text: root.collected-count + " of " + root.total-count + " cards (" + (root.total-count - root.collected-count) + " missing)";
@@ -175,7 +186,9 @@ export component AppWindow inherits Window {
                 // Sets view
                 if !root.show-cards-view && root.selected-set-name == "" : VerticalLayout {
                     width: 100%;
+                    height: 100%;
                     horizontal-stretch: 1;
+
                     HorizontalLayout {
                         horizontal-stretch: 1;
                         spacing: 8px;
@@ -189,11 +202,12 @@ export component AppWindow inherits Window {
                             }
                         }
                     }
-                    ScrollView {
-                        width: 100%;
-                        horizontal-stretch: 1;
-                        horizontal-scrollbar-policy: ScrollBarPolicy.always-off;
                         ListView {
+                            width: 100%;
+                            horizontal-stretch: 1;
+                            vertical-stretch: 1;
+
+                            horizontal-scrollbar-policy: ScrollBarPolicy.always-off;
                             for set in root.sets-model : HorizontalLayout {
                                 width: 100%;
                                 spacing: 8px;
@@ -245,7 +259,6 @@ export component AppWindow inherits Window {
                                 }
                             }
                         }
-                    }
                     Text {
                         text: "Showing " + root.sets-model.length + " sets";
                         font-size: 12px;
@@ -256,7 +269,9 @@ export component AppWindow inherits Window {
                 // Set details view
                 if !root.show-cards-view && root.selected-set-name != "" : VerticalLayout {
                     width: 100%;
+                    height: 100%;
                     horizontal-stretch: 1;
+
                     HorizontalLayout {
                         Button {
                             text: "<- Back";
@@ -269,11 +284,12 @@ export component AppWindow inherits Window {
                             color: Palette.foreground;
                         }
                     }
-                    ScrollView {
-                        width: 100%;
-                        horizontal-stretch: 1;
-                        horizontal-scrollbar-policy: ScrollBarPolicy.always-off;
                         ListView {
+                            width: 100%;
+                            horizontal-stretch: 1;
+                            vertical-stretch: 1;
+
+                            horizontal-scrollbar-policy: ScrollBarPolicy.always-off;
                             for card in root.set-cards-model : HorizontalLayout {
                                 width: 100%;
                                 spacing: 8px;
@@ -301,7 +317,6 @@ export component AppWindow inherits Window {
                                 }
                             }
                         }
-                    }
                 }
             }
         }

@@ -205,6 +205,27 @@ fn main() -> anyhow::Result<()> {
         }
     });
 
+    // Keep the list height in sync with the actual window resize (Wayland/winit
+// does not propagate logical size changes into the layout on its own here).
+    let ui_weak = ui.as_weak();
+    let diag = slint::Timer::default();
+    diag.start(
+        slint::TimerMode::Repeated,
+        std::time::Duration::from_millis(500),
+        move || {
+            if let Some(u) = ui_weak.upgrade() {
+                let s = u.window().size();
+                if s.height > 0 {
+                    let scale = u.window().scale_factor().max(0.1);
+                    let fill_h: f32 = ((s.height as f32) / scale).into();
+                    if (u.get_fill_height() - fill_h).abs() > 0.5 {
+                        u.set_fill_height(fill_h);
+                    }
+                }
+            }
+        },
+    );
+
     ui.run()?;
     Ok(())
 }
