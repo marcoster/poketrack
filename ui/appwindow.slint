@@ -32,7 +32,7 @@ export component AppWindow inherits Window {
     in property <int> total-count: 0;
     // Injected from Rust on resize so the list fills the window height
     // (Slint's root.height stays stale under Wayland/winit here).
-    in property <length> fill-height: 600px;
+    in property <length> fill-height: 640px;
 
     callback toggle-collected(dex_id: int);
     callback collect-set(set_id: string);
