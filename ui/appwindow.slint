@@ -96,9 +96,9 @@ export component AppWindow inherits Window {
         }
 
         // ---- Content ----
-        HorizontalLayout {
         // ---- Main panel ----
         Rectangle {
+            horizontal-stretch: 1;
             background: Palette.control-background;
 
             VerticalLayout {
@@ -107,7 +107,10 @@ export component AppWindow inherits Window {
 
                 // Cards view
                 if root.show-cards-view : VerticalLayout {
+                    width: 100%;
+                    horizontal-stretch: 1;
                     HorizontalLayout {
+                        horizontal-stretch: 1;
                         spacing: 8px;
                         ComboBox {
                             width: 130px;
@@ -129,6 +132,9 @@ export component AppWindow inherits Window {
                     }
 
                     ScrollView {
+                        width: 100%;
+                        horizontal-stretch: 1;
+                        horizontal-scrollbar-policy: ScrollBarPolicy.always-off;
                         ListView {
                             for card in root.cards-model : HorizontalLayout {
                                 width: 100%;
@@ -168,7 +174,10 @@ export component AppWindow inherits Window {
 
                 // Sets view
                 if !root.show-cards-view && root.selected-set-name == "" : VerticalLayout {
+                    width: 100%;
+                    horizontal-stretch: 1;
                     HorizontalLayout {
+                        horizontal-stretch: 1;
                         spacing: 8px;
                         ComboBox {
                             width: 130px;
@@ -181,6 +190,9 @@ export component AppWindow inherits Window {
                         }
                     }
                     ScrollView {
+                        width: 100%;
+                        horizontal-stretch: 1;
+                        horizontal-scrollbar-policy: ScrollBarPolicy.always-off;
                         ListView {
                             for set in root.sets-model : HorizontalLayout {
                                 width: 100%;
@@ -243,6 +255,8 @@ export component AppWindow inherits Window {
 
                 // Set details view
                 if !root.show-cards-view && root.selected-set-name != "" : VerticalLayout {
+                    width: 100%;
+                    horizontal-stretch: 1;
                     HorizontalLayout {
                         Button {
                             text: "<- Back";
@@ -256,6 +270,9 @@ export component AppWindow inherits Window {
                         }
                     }
                     ScrollView {
+                        width: 100%;
+                        horizontal-stretch: 1;
+                        horizontal-scrollbar-policy: ScrollBarPolicy.always-off;
                         ListView {
                             for card in root.set-cards-model : HorizontalLayout {
                                 width: 100%;
@@ -287,7 +304,6 @@ export component AppWindow inherits Window {
                     }
                 }
             }
-        }
         }
     }
 }
