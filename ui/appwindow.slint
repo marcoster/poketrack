@@ -64,6 +64,15 @@ export component AppWindow inherits Window {
                     vertical-alignment: center;
                 }
 
+                Button {
+                    text: "Cards";
+                    clicked => { root.show-cards-view = true; root.clear-selected-set(); }
+                }
+                Button {
+                    text: "Sets";
+                    clicked => { root.show-cards-view = false; root.clear-selected-set(); }
+                }
+
                 ProgressIndicator {
                     width: 160px;
                     progress: root.progress;
@@ -85,25 +94,6 @@ export component AppWindow inherits Window {
 
         // ---- Content ----
         HorizontalLayout {
-        // ---- Left nav ----
-        Rectangle {
-            width: 160px;
-            background: Palette.background;
-            VerticalLayout {
-                padding: 8px;
-                spacing: 8px;
-
-                Button {
-                    text: "Cards";
-                    clicked => { root.show-cards-view = true; root.clear-selected-set(); }
-                }
-                Button {
-                    text: "Sets";
-                    clicked => { root.show-cards-view = false; root.clear-selected-set(); }
-                }
-            }
-        }
-
         // ---- Main panel ----
         Rectangle {
             background: Palette.control-background;
