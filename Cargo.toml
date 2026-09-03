@@ -22,8 +22,16 @@ name = "poketrack"
 crate-type = ["cdylib", "rlib"]
 
 [package.metadata.android]
+resources = "res"
+
+[package.metadata.android.sdk]
 min_sdk_version = 21
-target_sdk_version = 33
+target_sdk_version = 36
 
 [package.metadata.android.application]
 label = "Poketrack"
+icon = "@mipmap/ic_launcher"
+
+[package.metadata.android.signing.release]
+path = "release.keystore"
+keystore_password = "poketrack123"

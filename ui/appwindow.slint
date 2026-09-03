@@ -30,9 +30,11 @@ export component AppWindow inherits Window {
     in property <float> progress: 0;
     in property <int> collected-count: 0;
     in property <int> total-count: 0;
-    // Injected from Rust on resize so the list fills the window height
-    // (Slint's root.height stays stale under Wayland/winit here).
-    in property <length> fill-height: 640px;
+    // Desktop-only; the DB update needs the cards-database-json/ data that is not
+    // bundled on Android.
+    in property <bool> show-update-button: true;
+    // On narrow/mobile screens the top bar shows only the two view buttons.
+    in property <bool> compact-top-bar: false;
 
     callback toggle-collected(dex_id: int);
     callback collect-set(set_id: string);
@@ -56,6 +58,8 @@ export component AppWindow inherits Window {
     VerticalLayout {
         width: 100%;
         height: 100%;
+        // Keep the top bar clear of the Android system status bar / notch.
+        padding-top: root.safe-area-insets.top;
         Rectangle {
             height: 48px;
             width: 100%;
@@ -64,7 +68,7 @@ export component AppWindow inherits Window {
                 padding: 8px;
                 spacing: 8px;
 
-                Text {
+                if !root.compact-top-bar : Text {
                     text: "Poketrack";
                     font-size: 20px;
                     font-weight: 700;
@@ -74,26 +78,28 @@ export component AppWindow inherits Window {
 
                 Button {
                     text: "Cards";
+                    horizontal-stretch: root.compact-top-bar ? 1 : 0;
                     clicked => { root.show-cards-view = true; root.clear-selected-set(); }
                 }
                 Button {
                     text: "Sets";
+                    horizontal-stretch: root.compact-top-bar ? 1 : 0;
                     clicked => { root.show-cards-view = false; root.clear-selected-set(); }
                 }
 
-                ProgressIndicator {
+                if !root.compact-top-bar : ProgressIndicator {
                     width: 160px;
                     progress: root.progress;
                 }
 
-                Text {
+                if !root.compact-top-bar : Text {
                     text: root.status-text;
                     color: Palette.foreground;
                     font-size: 14px;
                     vertical-alignment: center;
                 }
 
-                Button {
+                if root.show-update-button : Button {
                     text: "Update Database";
                     clicked => { root.update-database(); }
                 }
@@ -105,7 +111,6 @@ export component AppWindow inherits Window {
         Rectangle {
             horizontal-stretch: 1;
             vertical-stretch: 1;
-            height: max(root.fill-height - 48px, 200px);
             background: Palette.control-background;
 
             VerticalLayout {

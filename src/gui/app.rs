@@ -36,45 +36,57 @@ impl App {
     }
 
     fn load_cards(&mut self) {
-        if let Ok(cards) = self.repository.get_all_cards() {
-            let missing_pokemon = self.repository.get_missing_pokemon().unwrap_or_default();
-            self.state.cards = cards.into_iter().map(|(_id, name, dex_id)| {
-                let dex = dex_id.unwrap_or(0);
-                let is_collected = !missing_pokemon.contains(&dex);
-                CardModel {
-                    dex_id: dex,
-                    name,
-                    is_collected,
-                }
-            }).collect();
+        match self.repository.get_all_cards() {
+            Ok(cards) => {
+                let missing_pokemon = self.repository.get_missing_pokemon().unwrap_or_default();
+                self.state.cards = cards.into_iter().map(|(_id, name, dex_id)| {
+                    let dex = dex_id.unwrap_or(0);
+                    let is_collected = !missing_pokemon.contains(&dex);
+                    CardModel {
+                        dex_id: dex,
+                        name,
+                        is_collected,
+                    }
+                }).collect();
+                tracing::info!("load_cards: {} cards loaded", self.state.cards.len());
+            }
+            Err(e) => tracing::error!("load_cards failed: {e:#}"),
         }
     }
 
     fn load_sets(&mut self) {
-        if let Ok(sets) = self.repository.get_all_sets() {
-            let missing_stats = self.repository.get_set_missing_stats(None).unwrap_or_default();
-            self.state.sets = sets.into_iter().map(|set| {
-                let missing_count = missing_stats
-                    .iter()
-                    .find(|s| s.set_id == set.id)
-                    .map(|s| s.missing)
-                    .unwrap_or(0);
-                let language = if set.id.starts_with("en-") { "English" } else { "Japanese" };
-                SetModel {
-                    id: set.id,
-                    name: set.name,
-                    release_date: set.release_date,
-                    missing_count,
-                    language: language.to_string(),
-                }
-            }).collect();
+        match self.repository.get_all_sets() {
+            Ok(sets) => {
+                let missing_stats = self.repository.get_set_missing_stats(None).unwrap_or_default();
+                self.state.sets = sets.into_iter().map(|set| {
+                    let missing_count = missing_stats
+                        .iter()
+                        .find(|s| s.set_id == set.id)
+                        .map(|s| s.missing)
+                        .unwrap_or(0);
+                    let language = if set.id.starts_with("en-") { "English" } else { "Japanese" };
+                    SetModel {
+                        id: set.id,
+                        name: set.name,
+                        release_date: set.release_date,
+                        missing_count,
+                        language: language.to_string(),
+                    }
+                }).collect();
+                tracing::info!("load_sets: {} sets loaded", self.state.sets.len());
+            }
+            Err(e) => tracing::error!("load_sets failed: {e:#}"),
         }
     }
 
     fn update_completion(&mut self) {
-        if let Ok(completion) = self.repository.get_pokedex_completion() {
-            self.state.collected_count = completion.collected;
-            self.state.total_count = completion.total;
+        match self.repository.get_pokedex_completion() {
+            Ok(completion) => {
+                self.state.collected_count = completion.collected;
+                self.state.total_count = completion.total;
+                tracing::info!("completion: {}/{}", completion.collected, completion.total);
+            }
+            Err(e) => tracing::error!("get_pokedex_completion failed: {e:#}"),
         }
     }
 
