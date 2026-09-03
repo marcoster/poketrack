@@ -1,4 +1,4 @@
-import { Button, CheckBox, ComboBox, ProgressIndicator, ScrollView, ListView, Palette } from "std-widgets.slint";
+import { Button, ComboBox, ProgressIndicator, ScrollView, ListView, Palette } from "std-widgets.slint";
 
 // Poketrack GUI - main application window
 
@@ -14,6 +14,91 @@ export struct SetItem {
     language: string,
     release_date: string,
     missing_count: int,
+}
+
+// A small visual indicator for "is this card collected?" (non-interactive;
+// taps are handled by the surrounding DragScrollBox).
+component CollectBox inherits Rectangle {
+    in property <bool> collected;
+    border-radius: 6px;
+    border-width: 2px;
+    border-color: Palette.border;
+    background: self.collected ? Palette.accent-background : Palette.control-background;
+    Text {
+        text: "✓";
+        visible: root.collected;
+        color: Palette.accent-foreground;
+        font-size: 13px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+// A manually-driven scroll viewport. The built-in ScrollView/ListView Flickable
+// does not respond to raw touch drags on the Android backend, so we implement
+// the drag ourselves with an explicit TouchArea and a content offset (y).
+// Rows are NON-interactive visuals; taps are reported centrally via row-tapped
+// (with the tapped x within the row), so the parent can decide the action
+// without fighting the drag gesture.
+component DragScrollBox inherits Rectangle {
+    in property <length> row-height;
+    in property <int> row-count;
+    in property <length> row-spacing;
+    // Where the (clipped) content currently sits. Negative moves it up so lower
+    // rows become visible. The parent can read/reset this, e.g. on view switch.
+    in-out property <length> offset-y;
+    // Reports a tap on a row. x is the tapped position within the row (px from
+    // the row's left edge), which the parent can use to hit-test action zones.
+    callback row-tapped(row: int, x: length);
+
+    clip: true;
+    property <length> content-h: (self.row-count * self.row-height) + (self.row-count - 1) * self.row-spacing;
+    property <length> max-scroll: max(0px, self.content-h - self.height);
+    property <length> grab-pos: 0px;
+    property <length> grab-offset: 0px;
+    property <bool> dragging: false;
+
+    VerticalLayout {
+        width: parent.width;
+        x: 0px;
+        y: root.offset-y;
+        spacing: root.row-spacing;
+        @children
+    }
+
+    // The overlay that owns all pointer interaction for this viewport.
+    TouchArea {
+        width: parent.width;
+        height: parent.height;
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.down {
+                root.dragging = false;
+                root.grab-pos = self.mouse-y;
+                root.grab-offset = root.offset-y;
+            } else if e.kind == PointerEventKind.up {
+                if !root.dragging {
+                    // It was a tap, not a drag. Hit-test the row.
+                    let content-y = self.mouse-y - root.offset-y;
+                    let row = content-y / root.row-height;
+                    if row >= 0 && row < root.row-count {
+                        root.row-tapped(row, self.mouse-x);
+                    }
+                }
+                root.dragging = false;
+            } else if e.kind == PointerEventKind.cancel {
+                root.dragging = false;
+            }
+        }
+        moved => {
+            let delta = self.mouse-y - root.grab-pos;
+            if abs(delta) > 8 * 1px {
+                root.dragging = true;
+            }
+            if root.dragging {
+                root.offset-y = min(0px, max(-root.max-scroll, root.grab-offset + delta));
+            }
+        }
+    }
 }
 
 export component AppWindow inherits Window {
@@ -35,6 +120,10 @@ export component AppWindow inherits Window {
     in property <bool> show-update-button: true;
     // On narrow/mobile screens the top bar shows only the two view buttons.
     in property <bool> compact-top-bar: false;
+    // True when the window is portrait-oriented (taller than wide). Drives the
+    // responsive layout: the top bar collapses to just the view buttons and wide
+    // set rows drop their extra columns so everything fits a phone held upright.
+    property <bool> portrait: root.width < root.height;
 
     callback toggle-collected(dex_id: int);
     callback collect-set(set_id: string);
@@ -68,7 +157,7 @@ export component AppWindow inherits Window {
                 padding: 8px;
                 spacing: 8px;
 
-                if !root.compact-top-bar : Text {
+                if !root.portrait : Text {
                     text: "Poketrack";
                     font-size: 20px;
                     font-weight: 700;
@@ -78,21 +167,21 @@ export component AppWindow inherits Window {
 
                 Button {
                     text: "Cards";
-                    horizontal-stretch: root.compact-top-bar ? 1 : 0;
+                    horizontal-stretch: root.portrait ? 1 : 0;
                     clicked => { root.show-cards-view = true; root.clear-selected-set(); }
                 }
                 Button {
                     text: "Sets";
-                    horizontal-stretch: root.compact-top-bar ? 1 : 0;
+                    horizontal-stretch: root.portrait ? 1 : 0;
                     clicked => { root.show-cards-view = false; root.clear-selected-set(); }
                 }
 
-                if !root.compact-top-bar : ProgressIndicator {
+                if !root.portrait : ProgressIndicator {
                     width: 160px;
                     progress: root.progress;
                 }
 
-                if !root.compact-top-bar : Text {
+                if !root.portrait : Text {
                     text: root.status-text;
                     color: Palette.foreground;
                     font-size: 14px;
@@ -122,8 +211,7 @@ export component AppWindow inherits Window {
                 // Cards view
                 if root.show-cards-view : VerticalLayout {
                     width: 100%;
-                    height: 100%;
-                    horizontal-stretch: 1;
+                    vertical-stretch: 1;
 
                     HorizontalLayout {
                         horizontal-stretch: 1;
@@ -147,39 +235,38 @@ export component AppWindow inherits Window {
                         }
                     }
 
-                        ListView {
+                    cards-list := DragScrollBox {
+                        width: 100%;
+                        horizontal-stretch: 1;
+                        vertical-stretch: 1;
+                        row-height: 30px;
+                        row-count: root.cards-model.length;
+                        row-spacing: 2px;
+                        row-tapped(row, x) => {
+                            root.toggle-collected(root.cards-model[row].dex_id);
+                        }
+                        for card in root.cards-model : HorizontalLayout {
+                            height: 30px;
                             width: 100%;
-                            horizontal-stretch: 1;
-                            vertical-stretch: 1;
-
-                            horizontal-scrollbar-policy: ScrollBarPolicy.always-off;
-                            for card in root.cards-model : HorizontalLayout {
-                                width: 100%;
-                                spacing: 8px;
-                                padding: 4px;
-
-                                CheckBox {
-                                    checked: card.collected;
-                                    toggled => {
-                                        root.toggle-collected(card.dex_id);
-                                    }
-                                }
-
-                                Text {
-                                    text: "#" + card.dex_id;
-                                    font-size: 14px;
-                                    color: Palette.foreground;
-                                    width: 56px;
-                                }
-
-                                Text {
-                                    text: card.name;
-                                    font-size: 14px;
-                                    color: Palette.foreground;
-                                    horizontal-stretch: 1;
-                                }
+                            spacing: 8px;
+                            padding: 4px;
+                            CollectBox { collected: card.collected; }
+                            Text {
+                                text: "#" + card.dex_id;
+                                font-size: 14px;
+                                color: Palette.foreground;
+                                width: 56px;
+                                vertical-alignment: center;
+                            }
+                            Text {
+                                text: card.name;
+                                font-size: 14px;
+                                color: Palette.foreground;
+                                horizontal-stretch: 1;
+                                vertical-alignment: center;
                             }
                         }
+                    }
 
                     Text {
                         text: root.collected-count + " of " + root.total-count + " cards (" + (root.total-count - root.collected-count) + " missing)";
@@ -191,8 +278,7 @@ export component AppWindow inherits Window {
                 // Sets view
                 if !root.show-cards-view && root.selected-set-name == "" : VerticalLayout {
                     width: 100%;
-                    height: 100%;
-                    horizontal-stretch: 1;
+                    vertical-stretch: 1;
 
                     HorizontalLayout {
                         horizontal-stretch: 1;
@@ -207,63 +293,88 @@ export component AppWindow inherits Window {
                             }
                         }
                     }
-                        ListView {
+                    DragScrollBox {
+                        width: 100%;
+                        horizontal-stretch: 1;
+                        vertical-stretch: 1;
+                        row-height: 30px;
+                        row-count: root.sets-model.length;
+                        row-spacing: 2px;
+                        row-tapped(row, x) => {
+                            // Left strip = Details, right strip = Add missing, middle = details too.
+                            if x < 90px {
+                                root.select-set(root.sets-model[row].set_id);
+                            } else if x > self.width - 110px && root.sets-model[row].missing_count > 0 {
+                                root.collect-set(root.sets-model[row].set_id);
+                            } else {
+                                root.select-set(root.sets-model[row].set_id);
+                            }
+                        }
+                        for set in root.sets-model : HorizontalLayout {
+                            height: 30px;
                             width: 100%;
-                            horizontal-stretch: 1;
-                            vertical-stretch: 1;
-
-                            horizontal-scrollbar-policy: ScrollBarPolicy.always-off;
-                            for set in root.sets-model : HorizontalLayout {
-                                width: 100%;
-                                spacing: 8px;
-                                padding: 4px;
-
-                                Button {
+                            spacing: 4px;
+                            padding: 4px;
+                            Rectangle {
+                                width: 86px;
+                                border-radius: 6px;
+                                background: Palette.accent-background;
+                                Text {
                                     text: "Details";
-                                    clicked => { root.select-set(set.set_id); }
+                                    color: Palette.accent-foreground;
+                                    font-size: 13px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
                                 }
-
+                            }
+                            Text {
+                                text: set.name;
+                                font-size: 14px;
+                                color: Palette.foreground;
+                                horizontal-stretch: 1;
+                                vertical-alignment: center;
+                            }
+                            if !root.portrait : Text {
+                                text: set.set_id;
+                                font-size: 12px;
+                                color: gray;
+                                width: 90px;
+                                vertical-alignment: center;
+                            }
+                            if !root.portrait : Text {
+                                text: set.language;
+                                font-size: 12px;
+                                color: gray;
+                                width: 70px;
+                                vertical-alignment: center;
+                            }
+                            if !root.portrait : Text {
+                                text: set.release_date;
+                                font-size: 12px;
+                                color: gray;
+                                width: 80px;
+                                vertical-alignment: center;
+                            }
+                            if !root.portrait : Text {
+                                text: set.missing_count + " missing";
+                                font-size: 12px;
+                                width: 80px;
+                                vertical-alignment: center;
+                            }
+                            Rectangle {
+                                width: 106px;
+                                border-radius: 6px;
+                                background: set.missing_count > 0 ? Palette.accent-background : Palette.control-background;
                                 Text {
-                                    text: set.name;
-                                    font-size: 14px;
-                                    color: Palette.foreground;
-                                    horizontal-stretch: 1;
-                                }
-
-                                Text {
-                                    text: set.set_id;
-                                    font-size: 12px;
-                                    color: gray;
-                                    width: 90px;
-                                }
-
-                                Text {
-                                    text: set.language;
-                                    font-size: 12px;
-                                    color: gray;
-                                    width: 70px;
-                                }
-
-                                Text {
-                                    text: set.release_date;
-                                    font-size: 12px;
-                                    color: gray;
-                                    width: 80px;
-                                }
-
-                                Text {
-                                    text: set.missing_count + " missing";
-                                    font-size: 12px;
-                                    width: 80px;
-                                }
-
-                                Button {
                                     text: "Add missing";
-                                    enabled: set.missing_count > 0;
-                                    clicked => { root.collect-set(set.set_id); }
+                                    color: Palette.accent-foreground;
+                                    font-size: 13px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
                                 }
                             }
                         }
+                    }
                     Text {
                         text: "Showing " + root.sets-model.length + " sets";
                         font-size: 12px;
@@ -274,8 +385,7 @@ export component AppWindow inherits Window {
                 // Set details view
                 if !root.show-cards-view && root.selected-set-name != "" : VerticalLayout {
                     width: 100%;
-                    height: 100%;
-                    horizontal-stretch: 1;
+                    vertical-stretch: 1;
 
                     HorizontalLayout {
                         Button {
@@ -289,39 +399,38 @@ export component AppWindow inherits Window {
                             color: Palette.foreground;
                         }
                     }
-                        ListView {
+                    DragScrollBox {
+                        width: 100%;
+                        horizontal-stretch: 1;
+                        vertical-stretch: 1;
+                        row-height: 30px;
+                        row-count: root.set-cards-model.length;
+                        row-spacing: 2px;
+                        row-tapped(row, x) => {
+                            root.toggle-collected(root.set-cards-model[row].dex_id);
+                        }
+                        for card in root.set-cards-model : HorizontalLayout {
+                            height: 30px;
                             width: 100%;
-                            horizontal-stretch: 1;
-                            vertical-stretch: 1;
-
-                            horizontal-scrollbar-policy: ScrollBarPolicy.always-off;
-                            for card in root.set-cards-model : HorizontalLayout {
-                                width: 100%;
-                                spacing: 8px;
-                                padding: 4px;
-
-                                CheckBox {
-                                    checked: card.collected;
-                                    toggled => {
-                                        root.toggle-collected(card.dex_id);
-                                    }
-                                }
-
-                                Text {
-                                    text: "#" + card.dex_id;
-                                    font-size: 14px;
-                                    color: Palette.foreground;
-                                    width: 56px;
-                                }
-
-                                Text {
-                                    text: card.name;
-                                    font-size: 14px;
-                                    color: Palette.foreground;
-                                    horizontal-stretch: 1;
-                                }
+                            spacing: 8px;
+                            padding: 4px;
+                            CollectBox { collected: card.collected; }
+                            Text {
+                                text: "#" + card.dex_id;
+                                font-size: 14px;
+                                color: Palette.foreground;
+                                width: 56px;
+                                vertical-alignment: center;
+                            }
+                            Text {
+                                text: card.name;
+                                font-size: 14px;
+                                color: Palette.foreground;
+                                horizontal-stretch: 1;
+                                vertical-alignment: center;
                             }
                         }
+                    }
                 }
             }
         }
